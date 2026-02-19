@@ -2,6 +2,7 @@ package collector
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/influxdata/influxdb-client-go/v2/api/write"
@@ -93,15 +94,18 @@ func (w *Worker) Collect(ctx context.Context) {
 					)
 					telemetry.CollectErrors.WithLabelValues(site, "edge_interfaces").Inc()
 				} else {
+					uplinkCandidates := 0
 					for _, iface := range ifaces {
-						if iface.InterfaceType != "PHYSICAL" {
+						if !isEdgeUplinkInterface(&iface) {
 							continue
 						}
+						uplinkCandidates++
 						ifStats, err := w.client.GetTransportNodeInterfaceStats(ctx, nodeID, iface.InterfaceID)
 						if err != nil {
 							logger.Warn("interface stats failed",
 								zap.String("node", nodeName),
 								zap.String("interface", iface.InterfaceID),
+								zap.String("interface_type", iface.InterfaceType),
 								zap.Error(err),
 							)
 							telemetry.CollectErrors.WithLabelValues(site, "edge_interface_stats").Inc()
@@ -109,6 +113,11 @@ func (w *Worker) Collect(ctx context.Context) {
 						}
 						points = append(points, influxpkg.EdgeUplinkStatsPoint(site, nodeID, nodeName, iface.InterfaceID, ifStats, now))
 					}
+					logger.Debug("edge interfaces evaluated",
+						zap.String("node", nodeName),
+						zap.Int("interfaces_total", len(ifaces)),
+						zap.Int("uplink_candidates", uplinkCandidates),
+					)
 				}
 			}
 		}
@@ -199,4 +208,25 @@ func buildT1ToT0Map(ctx context.Context, client *nsx.Client, routers []nsx.Logic
 		}
 	}
 	return t1ToT0Name
+}
+
+// isEdgeUplinkInterface classifies edge interfaces that likely carry dataplane uplink traffic.
+// NSX versions may vary interface_type values, so this accepts common physical/uplink variants
+// and excludes management/loopback/tunnel styles.
+func isEdgeUplinkInterface(iface *nsx.NetworkInterface) bool {
+	t := strings.ToUpper(strings.TrimSpace(iface.InterfaceType))
+	id := strings.ToLower(strings.TrimSpace(iface.InterfaceID))
+
+	switch t {
+	case "PHYSICAL", "UPLINK", "DATA", "DATAPATH", "FABRIC":
+		return true
+	case "MANAGEMENT", "MGMT", "LOOPBACK", "VIRTUAL", "TUNNEL":
+		return false
+	}
+
+	// Fallback when interface_type is inconsistent/missing: keep common dataplane names.
+	if strings.HasPrefix(id, "fp-") || strings.HasPrefix(id, "eth") {
+		return true
+	}
+	return false
 }
