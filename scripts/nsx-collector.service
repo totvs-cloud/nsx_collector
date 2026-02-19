@@ -1,0 +1,17 @@
+[Unit]
+Description=NSX Collector
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/home/nsx_collector/nsx-collector \
+  -config /home/nsx_collector/configs/config.yaml \
+  -managers /home/nsx_collector/configs/managers.yaml \
+  -env-file /home/nsx_collector/.env
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

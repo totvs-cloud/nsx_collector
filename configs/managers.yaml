@@ -1,0 +1,7 @@
+managers:
+  - site: "TESP6"
+    url: "https://10.114.36.200"
+    user_env: "NSX_TESP6_USER"
+    password_env: "NSX_TESP6_PASS"
+    tls_skip_verify: true
+    enabled: true

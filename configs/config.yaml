@@ -1,0 +1,16 @@
+influxdb:
+  url: "http://10.114.35.75:8086"
+  org: "TOTVS"
+  bucket: "nsx"
+
+logging:
+  level: "info"
+  format: "json"
+
+telemetry:
+  enabled: true
+  address: ":9101"
+
+intervals:
+  default: 40s
+  traffic: 15s
