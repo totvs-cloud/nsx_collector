@@ -90,6 +90,25 @@ func (c *Client) GetLogicalRouterPorts(ctx context.Context) ([]LogicalRouterPort
 	return all, nil
 }
 
+// GetTransportNodeInterfaces returns all network interfaces of a transport node.
+func (c *Client) GetTransportNodeInterfaces(ctx context.Context, nodeID string) ([]NetworkInterface, error) {
+	var result NetworkInterfaceList
+	if err := c.doGet(ctx, "/api/v1/transport-nodes/"+nodeID+"/network/interfaces", &result); err != nil {
+		return nil, fmt.Errorf("interfaces for node %s: %w", nodeID, err)
+	}
+	return result.Results, nil
+}
+
+// GetTransportNodeInterfaceStats returns cumulative byte/packet counters for one interface.
+func (c *Client) GetTransportNodeInterfaceStats(ctx context.Context, nodeID, ifID string) (*InterfaceStats, error) {
+	var result InterfaceStats
+	path := "/api/v1/transport-nodes/" + nodeID + "/network/interfaces/" + ifID + "/stats"
+	if err := c.doGet(ctx, path, &result); err != nil {
+		return nil, fmt.Errorf("interface stats for node %s iface %s: %w", nodeID, ifID, err)
+	}
+	return &result, nil
+}
+
 // GetBGPNeighborStatus returns BGP neighbor status for a logical router.
 // Returns empty list (not error) when no BGP is configured.
 func (c *Client) GetBGPNeighborStatus(ctx context.Context, routerID string) (*BGPNeighborStatusList, error) {

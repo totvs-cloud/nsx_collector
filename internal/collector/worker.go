@@ -82,6 +82,35 @@ func (w *Worker) Collect(ctx context.Context) {
 
 			pts := influxpkg.TransportNodeStatusPoints(site, nodeID, nodeName, nodeType, ts, now)
 			points = append(points, pts...)
+
+			// Collect physical uplink stats for Edge nodes
+			if nodeType == "EdgeNode" {
+				ifaces, err := w.client.GetTransportNodeInterfaces(ctx, nodeID)
+				if err != nil {
+					logger.Warn("interface list failed",
+						zap.String("node", nodeName),
+						zap.Error(err),
+					)
+					telemetry.CollectErrors.WithLabelValues(site, "edge_interfaces").Inc()
+				} else {
+					for _, iface := range ifaces {
+						if iface.InterfaceType != "PHYSICAL" {
+							continue
+						}
+						ifStats, err := w.client.GetTransportNodeInterfaceStats(ctx, nodeID, iface.InterfaceID)
+						if err != nil {
+							logger.Warn("interface stats failed",
+								zap.String("node", nodeName),
+								zap.String("interface", iface.InterfaceID),
+								zap.Error(err),
+							)
+							telemetry.CollectErrors.WithLabelValues(site, "edge_interface_stats").Inc()
+							continue
+						}
+						points = append(points, influxpkg.EdgeUplinkStatsPoint(site, nodeID, nodeName, iface.InterfaceID, ifStats, now))
+					}
+				}
+			}
 		}
 		logger.Debug("transport nodes collected", zap.Int("count", len(nodes)))
 	}

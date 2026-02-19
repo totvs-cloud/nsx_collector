@@ -137,6 +137,31 @@ func LogicalRouterPoint(site, parentT0Name string, lr *nsx.LogicalRouter, now ti
 	)
 }
 
+// EdgeUplinkStatsPoint converts interface stats for a physical Edge uplink to an InfluxDB point.
+// All fields are cumulative counters — use derivative() in Flux to compute throughput rates.
+func EdgeUplinkStatsPoint(site, nodeID, nodeName, ifID string, stats *nsx.InterfaceStats, now time.Time) *write.Point {
+	return influxdb2.NewPoint(
+		"nsx_edge_uplink",
+		map[string]string{
+			"site":         site,
+			"node_id":      nodeID,
+			"node_name":    nodeName,
+			"interface_id": ifID,
+		},
+		map[string]interface{}{
+			"rx_bytes":   stats.RxBytes,
+			"tx_bytes":   stats.TxBytes,
+			"rx_packets": stats.RxPackets,
+			"tx_packets": stats.TxPackets,
+			"rx_dropped": stats.RxDropped,
+			"tx_dropped": stats.TxDropped,
+			"rx_errors":  stats.RxErrors,
+			"tx_errors":  stats.TxErrors,
+		},
+		now,
+	)
+}
+
 // BGPNeighborPoint converts a BGP neighbor status to an InfluxDB point.
 func BGPNeighborPoint(site, routerID, routerName string, n *nsx.BGPNeighborStatus, now time.Time) *write.Point {
 	return influxdb2.NewPoint(

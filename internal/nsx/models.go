@@ -156,6 +156,33 @@ func (p *LogicalRouterPort) LinkedPortID() string {
 	return ""
 }
 
+// NetworkInterfaceList represents GET /api/v1/transport-nodes/{id}/network/interfaces
+type NetworkInterfaceList struct {
+	ResultCount int                `json:"result_count"`
+	Results     []NetworkInterface `json:"results"`
+}
+
+// NetworkInterface is one interface entry on a transport node.
+type NetworkInterface struct {
+	InterfaceID   string `json:"interface_id"`   // e.g. fp-eth0, eth0
+	InterfaceType string `json:"interface_type"` // PHYSICAL | MANAGEMENT | VIRTUAL
+	AdminStatus   string `json:"admin_status"`
+	LinkStatus    string `json:"link_status"`
+}
+
+// InterfaceStats represents GET /api/v1/transport-nodes/{id}/network/interfaces/{ifId}/stats
+// All fields are cumulative counters since the last reboot.
+type InterfaceStats struct {
+	RxBytes   int64 `json:"rx_bytes"`
+	TxBytes   int64 `json:"tx_bytes"`
+	RxPackets int64 `json:"rx_packets"`
+	TxPackets int64 `json:"tx_packets"`
+	RxDropped int64 `json:"rx_dropped"`
+	TxDropped int64 `json:"tx_dropped"`
+	RxErrors  int64 `json:"rx_errors"`
+	TxErrors  int64 `json:"tx_errors"`
+}
+
 // BGPNeighborStatusList represents GET /api/v1/logical-routers/{id}/routing/bgp/neighbors/status
 type BGPNeighborStatusList struct {
 	LogicalRouterID   string              `json:"logical_router_id"`
