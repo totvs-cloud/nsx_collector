@@ -168,6 +168,19 @@ func (w *Worker) Collect(ctx context.Context) {
 		logger.Debug("capacity collected", zap.Int("count", len(capacities)))
 	}
 
+	// 6. NS Services count
+	if svcCount, err := w.client.GetNSServicesCount(ctx); err != nil {
+		logger.Warn("ns-services count failed", zap.Error(err))
+		telemetry.CollectErrors.WithLabelValues(site, "ns_services").Inc()
+	} else {
+		points = append(points, influxpkg.CapacityPoint(site, &nsx.CapacityUsageItem{
+			UsageType:         "NUMBER_OF_NS_SERVICES",
+			DisplayName:       "NS Services",
+			CurrentUsageCount: svcCount,
+		}, now))
+		logger.Debug("ns-services collected", zap.Int64("count", svcCount))
+	}
+
 	// Write all points
 	if err := w.writer.WritePoints(ctx, points); err != nil {
 		logger.Error("write failed", zap.Error(err))

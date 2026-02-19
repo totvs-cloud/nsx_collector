@@ -118,6 +118,17 @@ func (c *Client) GetCapacityUsage(ctx context.Context) ([]CapacityUsageItem, err
 	return result.CapacityUsage, nil
 }
 
+// GetNSServicesCount returns the total count of NS service objects via GET /api/v1/ns-services.
+func (c *Client) GetNSServicesCount(ctx context.Context) (int64, error) {
+	var result struct {
+		ResultCount int64 `json:"result_count"`
+	}
+	if err := c.doGet(ctx, "/api/v1/ns-services?page_size=1", &result); err != nil {
+		return 0, fmt.Errorf("ns-services count: %w", err)
+	}
+	return result.ResultCount, nil
+}
+
 // GetActiveAlarms returns all OPEN alarms from the NSX Manager, paginating automatically.
 func (c *Client) GetActiveAlarms(ctx context.Context) ([]Alarm, error) {
 	var all []Alarm
