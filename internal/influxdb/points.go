@@ -183,6 +183,27 @@ func AlarmPoint(site string, alarm *nsx.Alarm, now time.Time) *write.Point {
 	)
 }
 
+// CapacityPoint converts one NSX capacity usage entry to an InfluxDB point.
+// measurement: nsx_capacity
+// tags: site, usage_type, display_name
+// fields: current_usage, max_supported, usage_pct
+func CapacityPoint(site string, item *nsx.CapacityUsageItem, now time.Time) *write.Point {
+	return influxdb2.NewPoint(
+		"nsx_capacity",
+		map[string]string{
+			"site":         site,
+			"usage_type":   item.UsageType,
+			"display_name": item.DisplayName,
+		},
+		map[string]interface{}{
+			"current_usage": item.CurrentUsageCount,
+			"max_supported": item.MaxSupportedCount,
+			"usage_pct":     item.CurrentUsagePercentage,
+		},
+		now,
+	)
+}
+
 // EdgeUplinkStatsPoint converts interface stats for a physical Edge uplink to an InfluxDB point.
 // All fields are cumulative counters — use derivative() in Flux to compute throughput rates.
 func EdgeUplinkStatsPoint(site, nodeID, nodeName, ifID string, stats *nsx.InterfaceStats, now time.Time) *write.Point {

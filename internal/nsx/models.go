@@ -183,6 +183,20 @@ type InterfaceStats struct {
 	TxErrors  int64 `json:"tx_errors"`
 }
 
+// CapacityUsageResponse represents GET /api/v1/capacity/usage
+type CapacityUsageResponse struct {
+	CapacityUsage []CapacityUsageItem `json:"capacity_usage"`
+}
+
+// CapacityUsageItem is one capacity metric entry.
+type CapacityUsageItem struct {
+	UsageType              string  `json:"usage_type"`   // e.g. NUMBER_OF_GROUPS
+	DisplayName            string  `json:"display_name"` // human-readable label
+	CurrentUsageCount      int64   `json:"current_usage_count"`
+	MaxSupportedCount      int64   `json:"max_supported_count"`
+	CurrentUsagePercentage float64 `json:"current_usage_percentage"`
+}
+
 // AlarmList represents GET /api/v1/alarms
 type AlarmList struct {
 	ResultCount int     `json:"result_count"`

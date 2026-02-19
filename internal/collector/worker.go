@@ -156,6 +156,18 @@ func (w *Worker) Collect(ctx context.Context) {
 		logger.Debug("alarms collected", zap.Int("count", len(alarms)))
 	}
 
+	// 5. Capacity usage
+	capacities, err := w.client.GetCapacityUsage(ctx)
+	if err != nil {
+		logger.Warn("capacity usage failed", zap.Error(err))
+		telemetry.CollectErrors.WithLabelValues(site, "capacity").Inc()
+	} else {
+		for i := range capacities {
+			points = append(points, influxpkg.CapacityPoint(site, &capacities[i], now))
+		}
+		logger.Debug("capacity collected", zap.Int("count", len(capacities)))
+	}
+
 	// Write all points
 	if err := w.writer.WritePoints(ctx, points); err != nil {
 		logger.Error("write failed", zap.Error(err))

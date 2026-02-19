@@ -109,6 +109,15 @@ func (c *Client) GetTransportNodeInterfaceStats(ctx context.Context, nodeID, ifI
 	return &result, nil
 }
 
+// GetCapacityUsage returns all capacity usage entries from GET /api/v1/capacity/usage.
+func (c *Client) GetCapacityUsage(ctx context.Context) ([]CapacityUsageItem, error) {
+	var result CapacityUsageResponse
+	if err := c.doGet(ctx, "/api/v1/capacity/usage", &result); err != nil {
+		return nil, fmt.Errorf("capacity usage: %w", err)
+	}
+	return result.CapacityUsage, nil
+}
+
 // GetActiveAlarms returns all OPEN alarms from the NSX Manager, paginating automatically.
 func (c *Client) GetActiveAlarms(ctx context.Context) ([]Alarm, error) {
 	var all []Alarm
