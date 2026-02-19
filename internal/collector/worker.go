@@ -92,9 +92,13 @@ func (w *Worker) Collect(ctx context.Context) {
 		logger.Warn("logical routers failed", zap.Error(err))
 		telemetry.CollectErrors.WithLabelValues(site, "logical_routers").Inc()
 	} else {
+		// Build T1→T0 name map using logical router ports
+		t1ToT0Name := buildT1ToT0Map(ctx, w.client, routers, logger)
+
 		for i := range routers {
 			lr := &routers[i]
-			points = append(points, influxpkg.LogicalRouterPoint(site, lr, now))
+			parentT0 := t1ToT0Name[lr.ID]
+			points = append(points, influxpkg.LogicalRouterPoint(site, parentT0, lr, now))
 
 			// Collect BGP for T0 and VRF routers
 			if lr.RouterType == "TIER0" || lr.RouterType == "VRF" {
@@ -123,4 +127,43 @@ func (w *Worker) Collect(ctx context.Context) {
 	}
 	telemetry.PointsWritten.WithLabelValues(site).Add(float64(len(points)))
 	logger.Info("points written", zap.Int("count", len(points)))
+}
+
+// buildT1ToT0Map fetches all logical router ports and builds a map of
+// T1 router UUID → T0 router display name, used to tag T1 points with their parent T0.
+func buildT1ToT0Map(ctx context.Context, client *nsx.Client, routers []nsx.LogicalRouter, logger *zap.Logger) map[string]string {
+	// routerIDToName: UUID → display name for all routers
+	routerIDToName := make(map[string]string, len(routers))
+	for _, r := range routers {
+		routerIDToName[r.ID] = r.DisplayName
+	}
+
+	ports, err := client.GetLogicalRouterPorts(ctx)
+	if err != nil {
+		logger.Warn("logical router ports failed, T1→T0 mapping unavailable", zap.Error(err))
+		return nil
+	}
+
+	// portIDToRouterID: port UUID → router UUID (for all ports)
+	portIDToRouterID := make(map[string]string, len(ports))
+	for _, p := range ports {
+		portIDToRouterID[p.ID] = p.LogicalRouterID
+	}
+
+	// For each LinkedRouterPort (T1 side), resolve T1 → T0 name
+	t1ToT0Name := make(map[string]string)
+	for _, p := range ports {
+		if p.ResourceType != "LinkedRouterPort" || p.LinkedLogicalRouterPortID == "" {
+			continue
+		}
+		t1RouterID := p.LogicalRouterID
+		t0RouterID := portIDToRouterID[p.LinkedLogicalRouterPortID]
+		if t0RouterID == "" {
+			continue
+		}
+		if name, ok := routerIDToName[t0RouterID]; ok {
+			t1ToT0Name[t1RouterID] = name
+		}
+	}
+	return t1ToT0Name
 }

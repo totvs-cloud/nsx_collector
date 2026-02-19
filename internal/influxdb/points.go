@@ -118,15 +118,18 @@ func TransportNodeStatusPoints(site, nodeID, nodeName, nodeType string, ts *nsx.
 
 // LogicalRouterPoint converts a logical router to an InfluxDB point.
 // Used for counting and tracking T0/T1/VRF inventory.
-func LogicalRouterPoint(site string, lr *nsx.LogicalRouter, now time.Time) *write.Point {
+// parentT0Name should be set for TIER1 routers; empty string is fine for T0/VRF.
+func LogicalRouterPoint(site, parentT0Name string, lr *nsx.LogicalRouter, now time.Time) *write.Point {
+	tags := map[string]string{
+		"site":        site,
+		"router_id":   lr.ID,
+		"router_name": lr.DisplayName,
+		"router_type": lr.RouterType,
+		"parent_t0":   parentT0Name,
+	}
 	return influxdb2.NewPoint(
 		"nsx_logical_router",
-		map[string]string{
-			"site":        site,
-			"router_id":   lr.ID,
-			"router_name": lr.DisplayName,
-			"router_type": lr.RouterType,
-		},
+		tags,
 		map[string]interface{}{
 			"up": int64(1),
 		},

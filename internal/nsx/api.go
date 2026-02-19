@@ -67,6 +67,29 @@ func (c *Client) GetLogicalRouters(ctx context.Context) ([]LogicalRouter, error)
 	return all, nil
 }
 
+// GetLogicalRouterPorts returns all logical router ports, paginating automatically.
+// Used to build the T1→T0 parent mapping via LinkedRouterPort entries.
+func (c *Client) GetLogicalRouterPorts(ctx context.Context) ([]LogicalRouterPort, error) {
+	var all []LogicalRouterPort
+	cursor := ""
+	for {
+		path := "/api/v1/logical-router-ports?page_size=100"
+		if cursor != "" {
+			path += "&cursor=" + cursor
+		}
+		var page LogicalRouterPortList
+		if err := c.doGet(ctx, path, &page); err != nil {
+			return nil, fmt.Errorf("logical router ports: %w", err)
+		}
+		all = append(all, page.Results...)
+		if page.Cursor == "" || len(page.Results) == 0 {
+			break
+		}
+		cursor = page.Cursor
+	}
+	return all, nil
+}
+
 // GetBGPNeighborStatus returns BGP neighbor status for a logical router.
 // Returns empty list (not error) when no BGP is configured.
 func (c *Client) GetBGPNeighborStatus(ctx context.Context, routerID string) (*BGPNeighborStatusList, error) {

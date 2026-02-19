@@ -118,6 +118,22 @@ type LogicalRouter struct {
 	RouterType  string `json:"router_type"` // TIER0 | TIER1 | VRF
 }
 
+// LogicalRouterPortList represents GET /api/v1/logical-router-ports
+type LogicalRouterPortList struct {
+	ResultCount int                  `json:"result_count"`
+	Cursor      string               `json:"cursor"`
+	Results     []LogicalRouterPort  `json:"results"`
+}
+
+// LogicalRouterPort is a port attached to a logical router.
+// For resource_type=LinkedRouterPort (T1 side): LinkedLogicalRouterPortID points to the T0 uplink port.
+type LogicalRouterPort struct {
+	ID                        string `json:"id"`
+	LogicalRouterID           string `json:"logical_router_id"`
+	ResourceType              string `json:"resource_type"`
+	LinkedLogicalRouterPortID string `json:"linked_logical_router_port_id"`
+}
+
 // BGPNeighborStatusList represents GET /api/v1/logical-routers/{id}/routing/bgp/neighbors/status
 type BGPNeighborStatusList struct {
 	LogicalRouterID   string              `json:"logical_router_id"`
