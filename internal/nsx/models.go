@@ -126,12 +126,18 @@ type LogicalRouterPortList struct {
 }
 
 // LogicalRouterPort is a port attached to a logical router.
-// For resource_type=LinkedRouterPort (T1 side): LinkedLogicalRouterPortID points to the T0 uplink port.
+// For resource_type=LogicalRouterLinkPortOnTIER1 (T1 side):
+// LinkedLogicalRouterPortID is a ResourceReference to the peer port on the T0.
 type LogicalRouterPort struct {
-	ID                        string `json:"id"`
-	LogicalRouterID           string `json:"logical_router_id"`
-	ResourceType              string `json:"resource_type"`
-	LinkedLogicalRouterPortID string `json:"linked_logical_router_port_id"`
+	ID              string       `json:"id"`
+	LogicalRouterID string       `json:"logical_router_id"`
+	ResourceType    string       `json:"resource_type"`
+	LinkedLogicalRouterPortID ResourceReference `json:"linked_logical_router_port_id"`
+}
+
+// ResourceReference is used by NSX-T to reference another object.
+type ResourceReference struct {
+	TargetID string `json:"target_id"`
 }
 
 // BGPNeighborStatusList represents GET /api/v1/logical-routers/{id}/routing/bgp/neighbors/status

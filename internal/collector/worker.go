@@ -156,11 +156,11 @@ func buildT1ToT0Map(ctx context.Context, client *nsx.Client, routers []nsx.Logic
 	// For each LogicalRouterLinkPortOnTIER1 (T1 side), resolve T1 → T0 name
 	t1ToT0Name := make(map[string]string)
 	for _, p := range ports {
-		if p.ResourceType != "LogicalRouterLinkPortOnTIER1" || p.LinkedLogicalRouterPortID == "" {
+		if p.ResourceType != "LogicalRouterLinkPortOnTIER1" || p.LinkedLogicalRouterPortID.TargetID == "" {
 			continue
 		}
 		t1RouterID := p.LogicalRouterID
-		t0RouterID := portIDToRouterID[p.LinkedLogicalRouterPortID]
+		t0RouterID := portIDToRouterID[p.LinkedLogicalRouterPortID.TargetID]
 		if t0RouterID == "" {
 			continue
 		}
