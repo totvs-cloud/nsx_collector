@@ -98,6 +98,9 @@ func (w *Worker) Collect(ctx context.Context) {
 		for i := range routers {
 			lr := &routers[i]
 			parentT0 := t1ToT0Name[lr.ID]
+			if lr.RouterType == "TIER1" && parentT0 == "" {
+				parentT0 = "N/A"
+			}
 			points = append(points, influxpkg.LogicalRouterPoint(site, parentT0, lr, now))
 
 			// Collect BGP for T0 and VRF routers
@@ -150,10 +153,10 @@ func buildT1ToT0Map(ctx context.Context, client *nsx.Client, routers []nsx.Logic
 		portIDToRouterID[p.ID] = p.LogicalRouterID
 	}
 
-	// For each LinkedRouterPort (T1 side), resolve T1 → T0 name
+	// For each LogicalRouterLinkPortOnTIER1 (T1 side), resolve T1 → T0 name
 	t1ToT0Name := make(map[string]string)
 	for _, p := range ports {
-		if p.ResourceType != "LinkedRouterPort" || p.LinkedLogicalRouterPortID == "" {
+		if p.ResourceType != "LogicalRouterLinkPortOnTIER1" || p.LinkedLogicalRouterPortID == "" {
 			continue
 		}
 		t1RouterID := p.LogicalRouterID
