@@ -85,7 +85,7 @@ func (w *Worker) Collect(ctx context.Context) {
 			points = append(points, pts...)
 
 			// Collect physical uplink stats for Edge nodes
-			if nodeType == "EdgeNode" {
+			if isEdgeNodeType(nodeType) {
 				ifaces, err := w.client.GetTransportNodeInterfaces(ctx, nodeID)
 				if err != nil {
 					logger.Warn("interface list failed",
@@ -225,8 +225,18 @@ func isEdgeUplinkInterface(iface *nsx.NetworkInterface) bool {
 	}
 
 	// Fallback when interface_type is inconsistent/missing: keep common dataplane names.
-	if strings.HasPrefix(id, "fp-") || strings.HasPrefix(id, "eth") {
+	if strings.HasPrefix(id, "fp-") ||
+		strings.HasPrefix(id, "eth") ||
+		strings.HasPrefix(id, "vmnic") ||
+		strings.HasPrefix(id, "pnic") ||
+		strings.Contains(id, "uplink") ||
+		strings.Contains(id, "dpdk") {
 		return true
 	}
 	return false
+}
+
+func isEdgeNodeType(nodeType string) bool {
+	nt := strings.ToLower(strings.TrimSpace(nodeType))
+	return nt == "edgenode" || strings.Contains(nt, "edge")
 }
