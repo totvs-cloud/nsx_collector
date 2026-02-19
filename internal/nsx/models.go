@@ -183,20 +183,24 @@ type InterfaceStats struct {
 	TxErrors  int64 `json:"tx_errors"`
 }
 
-// BGPNeighborStatusList represents GET /api/v1/logical-routers/{id}/routing/bgp/neighbors/status
-type BGPNeighborStatusList struct {
-	LogicalRouterID   string              `json:"logical_router_id"`
-	LogicalRouterName string              `json:"logical_router_name"`
-	ResultCount       int                 `json:"result_count"`
-	Results           []BGPNeighborStatus `json:"results"`
+// AlarmList represents GET /api/v1/alarms
+type AlarmList struct {
+	ResultCount int     `json:"result_count"`
+	Cursor      string  `json:"cursor"`
+	Results     []Alarm `json:"results"`
 }
 
-// BGPNeighborStatus is one BGP neighbor entry.
-type BGPNeighborStatus struct {
-	NeighborAddress      string `json:"neighbor_address"`
-	RemoteASNumber       int    `json:"remote_as_number"`
-	ConnectionState      string `json:"connection_state"` // ESTABLISHED | ACTIVE | IDLE | CONNECT
-	TotalInPrefixCount   int64  `json:"total_in_prefix_count"`
-	TotalOutPrefixCount  int64  `json:"total_out_prefix_count"`
-	TimeEstablished      int64  `json:"time_since_established"` // seconds
+// Alarm is a single NSX platform alarm/fault.
+type Alarm struct {
+	ID                   string `json:"id"`
+	FeatureName          string `json:"feature_name"`
+	FeatureDisplayName   string `json:"feature_display_name"`
+	EventTypeDisplayName string `json:"event_type_display_name"`
+	Severity             string `json:"severity"`         // CRITICAL | HIGH | MEDIUM | LOW
+	NodeDisplayName      string `json:"node_display_name"`
+	EntityID             string `json:"entity_id"`
+	LastReportedTime     int64  `json:"last_reported_time"` // epoch ms
+	Status               string `json:"status"`             // OPEN | ACKNOWLEDGED | SUPPRESSED | RESOLVED
+	Summary              string `json:"summary"`
 }
+

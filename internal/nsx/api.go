@@ -109,13 +109,25 @@ func (c *Client) GetTransportNodeInterfaceStats(ctx context.Context, nodeID, ifI
 	return &result, nil
 }
 
-// GetBGPNeighborStatus returns BGP neighbor status for a logical router.
-// Returns empty list (not error) when no BGP is configured.
-func (c *Client) GetBGPNeighborStatus(ctx context.Context, routerID string) (*BGPNeighborStatusList, error) {
-	var result BGPNeighborStatusList
-	path := "/api/v1/logical-routers/" + routerID + "/routing/bgp/neighbors/status?source=realtime"
-	if err := c.doGet(ctx, path, &result); err != nil {
-		return nil, fmt.Errorf("BGP neighbors for %s: %w", routerID, err)
+// GetActiveAlarms returns all OPEN alarms from the NSX Manager, paginating automatically.
+func (c *Client) GetActiveAlarms(ctx context.Context) ([]Alarm, error) {
+	var all []Alarm
+	cursor := ""
+	for {
+		path := "/api/v1/alarms?status=OPEN&page_size=100"
+		if cursor != "" {
+			path += "&cursor=" + cursor
+		}
+		var page AlarmList
+		if err := c.doGet(ctx, path, &page); err != nil {
+			return nil, fmt.Errorf("alarms: %w", err)
+		}
+		all = append(all, page.Results...)
+		if page.Cursor == "" || len(page.Results) == 0 {
+			break
+		}
+		cursor = page.Cursor
 	}
-	return &result, nil
+	return all, nil
 }
+

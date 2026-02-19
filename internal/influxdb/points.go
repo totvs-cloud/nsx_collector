@@ -137,6 +137,44 @@ func LogicalRouterPoint(site, parentT0Name string, lr *nsx.LogicalRouter, now ti
 	)
 }
 
+// severityNum maps NSX alarm severity to a sortable integer (higher = more severe).
+func severityNum(s string) int64 {
+	switch s {
+	case "CRITICAL":
+		return 4
+	case "HIGH":
+		return 3
+	case "MEDIUM":
+		return 2
+	case "LOW":
+		return 1
+	}
+	return 0
+}
+
+// AlarmPoint converts an NSX active alarm to an InfluxDB point.
+// measurement: nsx_alarm
+// tags: site, alarm_id, severity, feature_name, node_name
+// fields: severity_num (int, for sorting), summary (string), event_type (string)
+func AlarmPoint(site string, alarm *nsx.Alarm, now time.Time) *write.Point {
+	return influxdb2.NewPoint(
+		"nsx_alarm",
+		map[string]string{
+			"site":         site,
+			"alarm_id":     alarm.ID,
+			"severity":     alarm.Severity,
+			"feature_name": alarm.FeatureName,
+			"node_name":    alarm.NodeDisplayName,
+		},
+		map[string]interface{}{
+			"severity_num": severityNum(alarm.Severity),
+			"summary":      alarm.Summary,
+			"event_type":   alarm.EventTypeDisplayName,
+		},
+		now,
+	)
+}
+
 // EdgeUplinkStatsPoint converts interface stats for a physical Edge uplink to an InfluxDB point.
 // All fields are cumulative counters — use derivative() in Flux to compute throughput rates.
 func EdgeUplinkStatsPoint(site, nodeID, nodeName, ifID string, stats *nsx.InterfaceStats, now time.Time) *write.Point {
@@ -157,26 +195,6 @@ func EdgeUplinkStatsPoint(site, nodeID, nodeName, ifID string, stats *nsx.Interf
 			"tx_dropped": stats.TxDropped,
 			"rx_errors":  stats.RxErrors,
 			"tx_errors":  stats.TxErrors,
-		},
-		now,
-	)
-}
-
-// BGPNeighborPoint converts a BGP neighbor status to an InfluxDB point.
-func BGPNeighborPoint(site, routerID, routerName string, n *nsx.BGPNeighborStatus, now time.Time) *write.Point {
-	return influxdb2.NewPoint(
-		"nsx_bgp_neighbor",
-		map[string]string{
-			"site":        site,
-			"router_id":   routerID,
-			"router_name": routerName,
-			"neighbor_ip": n.NeighborAddress,
-		},
-		map[string]interface{}{
-			"established":  statusInt(n.ConnectionState, "ESTABLISHED"),
-			"prefixes_rx":  n.TotalInPrefixCount,
-			"prefixes_tx":  n.TotalOutPrefixCount,
-			"uptime_s":     n.TimeEstablished,
 		},
 		now,
 	)

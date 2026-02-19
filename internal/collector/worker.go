@@ -124,7 +124,7 @@ func (w *Worker) Collect(ctx context.Context) {
 		logger.Debug("transport nodes collected", zap.Int("count", len(nodes)))
 	}
 
-	// 3. Logical routers (T0, T1, VRF) — inventory + BGP for T0/VRF
+	// 3. Logical routers (T0, T1, VRF) — inventory
 	routers, err := w.client.GetLogicalRouters(ctx)
 	if err != nil {
 		logger.Warn("logical routers failed", zap.Error(err))
@@ -140,24 +140,20 @@ func (w *Worker) Collect(ctx context.Context) {
 				parentT0 = "N/A"
 			}
 			points = append(points, influxpkg.LogicalRouterPoint(site, parentT0, lr, now))
-
-			// Collect BGP for T0 and VRF routers
-			if lr.RouterType == "TIER0" || lr.RouterType == "VRF" {
-				bgp, err := w.client.GetBGPNeighborStatus(ctx, lr.ID)
-				if err != nil {
-					logger.Warn("BGP status failed",
-						zap.String("router", lr.DisplayName),
-						zap.Error(err),
-					)
-					telemetry.CollectErrors.WithLabelValues(site, "bgp").Inc()
-					continue
-				}
-				for j := range bgp.Results {
-					points = append(points, influxpkg.BGPNeighborPoint(site, lr.ID, lr.DisplayName, &bgp.Results[j], now))
-				}
-			}
 		}
 		logger.Debug("logical routers collected", zap.Int("count", len(routers)))
+	}
+
+	// 4. Active alarms (NSX faults)
+	alarms, err := w.client.GetActiveAlarms(ctx)
+	if err != nil {
+		logger.Warn("alarms failed", zap.Error(err))
+		telemetry.CollectErrors.WithLabelValues(site, "alarms").Inc()
+	} else {
+		for i := range alarms {
+			points = append(points, influxpkg.AlarmPoint(site, &alarms[i], now))
+		}
+		logger.Debug("alarms collected", zap.Int("count", len(alarms)))
 	}
 
 	// Write all points
