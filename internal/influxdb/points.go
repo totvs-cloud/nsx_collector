@@ -154,9 +154,17 @@ func severityNum(s string) int64 {
 
 // AlarmPoint converts an NSX active alarm to an InfluxDB point.
 // measurement: nsx_alarm
-// tags: site, alarm_id, severity, feature_name, node_name
-// fields: severity_num (int, for sorting), summary (string), event_type (string)
+// tags: site, alarm_id, severity, feature_name, node_name, event_type, summary
+// fields: severity_num (int only — avoids pivot on string fields in Flux)
+//
+// event_type and summary are stored as tags so queries need no pivot:
+//   filter _field == "severity_num" → last() → sort → keep tags for display.
+// node_name defaults to "-" when empty so the tag is never dropped by InfluxDB.
 func AlarmPoint(site string, alarm *nsx.Alarm, now time.Time) *write.Point {
+	nodeName := alarm.NodeDisplayName
+	if nodeName == "" {
+		nodeName = "-"
+	}
 	return influxdb2.NewPoint(
 		"nsx_alarm",
 		map[string]string{
@@ -164,12 +172,12 @@ func AlarmPoint(site string, alarm *nsx.Alarm, now time.Time) *write.Point {
 			"alarm_id":     alarm.ID,
 			"severity":     alarm.Severity,
 			"feature_name": alarm.FeatureName,
-			"node_name":    alarm.NodeDisplayName,
+			"node_name":    nodeName,
+			"event_type":   alarm.EventTypeDisplayName,
+			"summary":      alarm.Summary,
 		},
 		map[string]interface{}{
 			"severity_num": severityNum(alarm.Severity),
-			"summary":      alarm.Summary,
-			"event_type":   alarm.EventTypeDisplayName,
 		},
 		now,
 	)
