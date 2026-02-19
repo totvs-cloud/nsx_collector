@@ -1,5 +1,7 @@
 package nsx
 
+import "encoding/json"
+
 // ClusterStatus represents GET /api/v1/cluster/status
 type ClusterStatus struct {
 	ClusterID         string `json:"cluster_id"`
@@ -126,18 +128,32 @@ type LogicalRouterPortList struct {
 }
 
 // LogicalRouterPort is a port attached to a logical router.
-// For resource_type=LogicalRouterLinkPortOnTIER1 (T1 side):
-// LinkedLogicalRouterPortID is a ResourceReference to the peer port on the T0.
+// linked_logical_router_port_id is polymorphic: some NSX versions return a plain
+// string UUID, others return a ResourceReference object with target_id.
 type LogicalRouterPort struct {
-	ID              string       `json:"id"`
-	LogicalRouterID string       `json:"logical_router_id"`
-	ResourceType    string       `json:"resource_type"`
-	LinkedLogicalRouterPortID ResourceReference `json:"linked_logical_router_port_id"`
+	ID              string          `json:"id"`
+	LogicalRouterID string          `json:"logical_router_id"`
+	ResourceType    string          `json:"resource_type"`
+	LinkedPortRaw   json.RawMessage `json:"linked_logical_router_port_id"`
 }
 
-// ResourceReference is used by NSX-T to reference another object.
-type ResourceReference struct {
-	TargetID string `json:"target_id"`
+// LinkedPortID extracts the peer port UUID regardless of whether the field
+// was serialized as a plain string or as a {"target_id": "..."} object.
+func (p *LogicalRouterPort) LinkedPortID() string {
+	if len(p.LinkedPortRaw) == 0 {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(p.LinkedPortRaw, &s); err == nil {
+		return s
+	}
+	var ref struct {
+		TargetID string `json:"target_id"`
+	}
+	if err := json.Unmarshal(p.LinkedPortRaw, &ref); err == nil {
+		return ref.TargetID
+	}
+	return ""
 }
 
 // BGPNeighborStatusList represents GET /api/v1/logical-routers/{id}/routing/bgp/neighbors/status
