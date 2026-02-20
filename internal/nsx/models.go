@@ -168,6 +168,7 @@ type NetworkInterface struct {
 	InterfaceType string `json:"interface_type"` // PHYSICAL | MANAGEMENT | VIRTUAL
 	AdminStatus   string `json:"admin_status"`
 	LinkStatus    string `json:"link_status"`
+	LinkSpeed     int64  `json:"link_speed"` // Mbps (0 = unknown/not connected)
 }
 
 // InterfaceStats represents GET /api/v1/transport-nodes/{id}/network/interfaces/{ifId}/stats

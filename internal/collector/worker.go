@@ -111,7 +111,7 @@ func (w *Worker) Collect(ctx context.Context) {
 							telemetry.CollectErrors.WithLabelValues(site, "edge_interface_stats").Inc()
 							continue
 						}
-						points = append(points, influxpkg.EdgeUplinkStatsPoint(site, nodeID, nodeName, iface.InterfaceID, ifStats, now))
+						points = append(points, influxpkg.EdgeUplinkStatsPoint(site, nodeID, nodeName, &iface, ifStats, now))
 					}
 					logger.Debug("edge interfaces evaluated",
 						zap.String("node", nodeName),

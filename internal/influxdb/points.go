@@ -206,24 +206,26 @@ func CapacityPoint(site string, item *nsx.CapacityUsageItem, now time.Time) *wri
 
 // EdgeUplinkStatsPoint converts interface stats for a physical Edge uplink to an InfluxDB point.
 // All fields are cumulative counters — use derivative() in Flux to compute throughput rates.
-func EdgeUplinkStatsPoint(site, nodeID, nodeName, ifID string, stats *nsx.InterfaceStats, now time.Time) *write.Point {
+// link_speed_mbps is the negotiated link speed in Mbps (0 = unknown/not connected).
+func EdgeUplinkStatsPoint(site, nodeID, nodeName string, iface *nsx.NetworkInterface, stats *nsx.InterfaceStats, now time.Time) *write.Point {
 	return influxdb2.NewPoint(
 		"nsx_edge_uplink",
 		map[string]string{
 			"site":         site,
 			"node_id":      nodeID,
 			"node_name":    nodeName,
-			"interface_id": ifID,
+			"interface_id": iface.InterfaceID,
 		},
 		map[string]interface{}{
-			"rx_bytes":   stats.RxBytes,
-			"tx_bytes":   stats.TxBytes,
-			"rx_packets": stats.RxPackets,
-			"tx_packets": stats.TxPackets,
-			"rx_dropped": stats.RxDropped,
-			"tx_dropped": stats.TxDropped,
-			"rx_errors":  stats.RxErrors,
-			"tx_errors":  stats.TxErrors,
+			"rx_bytes":        stats.RxBytes,
+			"tx_bytes":        stats.TxBytes,
+			"rx_packets":      stats.RxPackets,
+			"tx_packets":      stats.TxPackets,
+			"rx_dropped":      stats.RxDropped,
+			"tx_dropped":      stats.TxDropped,
+			"rx_errors":       stats.RxErrors,
+			"tx_errors":       stats.TxErrors,
+			"link_speed_mbps": iface.LinkSpeed,
 		},
 		now,
 	)
