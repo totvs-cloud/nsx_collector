@@ -7,8 +7,7 @@ REMOTE_HOST="10.100.29.200"
 REMOTE_USER="admin"
 REMOTE_PASS='nSx--T@!@dm!n#nsxT@2!'
 REMOTE_DIR="/home/nsx_collector"
-REPO_URL="git@github.com:totvs-cloud/nsx_collector.git"
-BUILD_DIR="/tmp/nsx-collector-build"
+BUILD_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 INFLUX_TOKEN="FLKJPw-nIgGobRHwhGH2KGVRaoYRvWiMqBuzLqZa8I_La1q2K7Nz_ruSvX1m0wMSW0eFlFo1KpMYer1T6NAz7A=="
 
 scp_file() {
@@ -27,16 +26,7 @@ ssh_run() {
   "
 }
 
-# ── 1. Clonar / atualizar repo ──────────────────────────────────────────────
-echo "==> Clonando repositório..."
-if [ -d "$BUILD_DIR/.git" ]; then
-  git -C "$BUILD_DIR" pull
-else
-  rm -rf "$BUILD_DIR"
-  git clone "$REPO_URL" "$BUILD_DIR"
-fi
-
-# ── 2. Compilar binário ──────────────────────────────────────────────────────
+# ── 1. Compilar binário ──────────────────────────────────────────────────────
 echo "==> Compilando binário Linux amd64..."
 cd "$BUILD_DIR"
 GOOS=linux GOARCH=amd64 go build -o /tmp/nsx-collector ./cmd/
