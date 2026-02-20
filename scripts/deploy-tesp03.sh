@@ -1,35 +1,51 @@
 #!/usr/bin/env bash
 # Deploy nsx-collector em 10.100.29.200 (TESP03)
-# Rodar de dev-redes. Usa expect (sem necessidade de sshpass).
+# Roda do zero no dev-redes: clona repo, compila e instala no tesp03.
 set -euo pipefail
 
 REMOTE_HOST="10.100.29.200"
 REMOTE_USER="admin"
 REMOTE_PASS='nSx--T@!@dm!n#nsxT@2!'
 REMOTE_DIR="/home/nsx_collector"
-LOCAL_BIN="/home/nsx_collector/nsx-collector"
+REPO_URL="git@github.com:totvs-cloud/nsx_collector.git"
+BUILD_DIR="/tmp/nsx-collector-build"
 INFLUX_TOKEN="FLKJPw-nIgGobRHwhGH2KGVRaoYRvWiMqBuzLqZa8I_La1q2K7Nz_ruSvX1m0wMSW0eFlFo1KpMYer1T6NAz7A=="
-
-# Funções auxiliares usando expect
-ssh_cmd() {
-  expect -c "
-    spawn ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} \"$1\"
-    expect {password:} { send \"${REMOTE_PASS}\r\" }
-    expect eof
-  "
-}
 
 scp_file() {
   expect -c "
-    spawn scp -o StrictHostKeyChecking=no $1 ${REMOTE_USER}@${REMOTE_HOST}:$2
-    expect {password:} { send \"${REMOTE_PASS}\r\" }
+    spawn scp -o StrictHostKeyChecking=no \"$1\" ${REMOTE_USER}@${REMOTE_HOST}:\"$2\"
+    expect -re {[Pp]assword:} { send \"${REMOTE_PASS}\r\" }
     expect eof
   "
 }
 
+ssh_run() {
+  expect -c "
+    spawn ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} \"$1\"
+    expect -re {[Pp]assword:} { send \"${REMOTE_PASS}\r\" }
+    expect eof
+  "
+}
+
+# ── 1. Clonar / atualizar repo ──────────────────────────────────────────────
+echo "==> Clonando repositório..."
+if [ -d "$BUILD_DIR/.git" ]; then
+  git -C "$BUILD_DIR" pull
+else
+  rm -rf "$BUILD_DIR"
+  git clone "$REPO_URL" "$BUILD_DIR"
+fi
+
+# ── 2. Compilar binário ──────────────────────────────────────────────────────
+echo "==> Compilando binário Linux amd64..."
+cd "$BUILD_DIR"
+GOOS=linux GOARCH=amd64 go build -o /tmp/nsx-collector ./cmd/
+echo "    OK: /tmp/nsx-collector"
+
+# ── 3. Criar arquivos de configuração ───────────────────────────────────────
 echo "==> Criando arquivos de configuração..."
 TMPDIR=$(mktemp -d)
-trap 'rm -rf "$TMPDIR"' EXIT
+trap 'rm -rf "$TMPDIR" /tmp/nsx-collector' EXIT
 
 cat > "$TMPDIR/config.yaml" <<'EOF'
 influxdb:
@@ -86,28 +102,32 @@ StandardError=journal
 WantedBy=multi-user.target
 EOF
 
-echo "==> Criando diretórios remotos..."
-ssh_cmd "mkdir -p ${REMOTE_DIR}/configs"
+# ── 4. Enviar arquivos ───────────────────────────────────────────────────────
+echo "==> Criando diretórios em ${REMOTE_HOST}..."
+ssh_run "mkdir -p ${REMOTE_DIR}/configs"
 
-echo "==> Enviando binário e configs..."
-scp_file "$LOCAL_BIN"              "${REMOTE_DIR}/nsx-collector"
-scp_file "$TMPDIR/.env"            "${REMOTE_DIR}/.env"
-scp_file "$TMPDIR/config.yaml"     "${REMOTE_DIR}/configs/config.yaml"
-scp_file "$TMPDIR/managers.yaml"   "${REMOTE_DIR}/configs/managers.yaml"
+echo "==> Enviando arquivos..."
+scp_file "/tmp/nsx-collector"          "${REMOTE_DIR}/nsx-collector"
+scp_file "$TMPDIR/.env"                "${REMOTE_DIR}/.env"
+scp_file "$TMPDIR/config.yaml"         "${REMOTE_DIR}/configs/config.yaml"
+scp_file "$TMPDIR/managers.yaml"       "${REMOTE_DIR}/configs/managers.yaml"
 scp_file "$TMPDIR/nsx-collector.service" "/tmp/nsx-collector.service"
 
-echo "==> Instalando e iniciando serviço..."
+# ── 5. Instalar e iniciar serviço ────────────────────────────────────────────
+echo "==> Instalando serviço em ${REMOTE_HOST}..."
 expect -c "
+  set timeout 30
   spawn ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST}
-  expect {password:} { send \"${REMOTE_PASS}\r\" }
-  expect {\\\$} {
-    send \"chmod +x ${REMOTE_DIR}/nsx-collector\r\"
-    send \"chmod 600 ${REMOTE_DIR}/.env\r\"
+  expect -re {[Pp]assword:} { send \"${REMOTE_PASS}\r\" }
+  expect -re {[#\$]} {
+    send \"chmod +x ${REMOTE_DIR}/nsx-collector && chmod 600 ${REMOTE_DIR}/.env\r\"
+    expect -re {[#\$]}
     send \"cp /tmp/nsx-collector.service /etc/systemd/system/nsx-collector.service\r\"
-    send \"systemctl daemon-reload\r\"
-    send \"systemctl enable nsx-collector\r\"
-    send \"systemctl restart nsx-collector\r\"
+    expect -re {[#\$]}
+    send \"systemctl daemon-reload && systemctl enable nsx-collector && systemctl restart nsx-collector\r\"
+    expect -re {[#\$]}
     send \"sleep 3 && systemctl status nsx-collector --no-pager\r\"
+    expect -re {[#\$]}
     send \"exit\r\"
   }
   expect eof
