@@ -3,6 +3,12 @@
 # Roda do zero no dev-redes: clona repo, compila e instala no tesp03.
 set -euo pipefail
 
+# Garantir que expect está instalado
+if ! command -v expect &>/dev/null; then
+  echo "==> Instalando expect..."
+  yum install -y expect
+fi
+
 REMOTE_HOST="10.100.29.200"
 REMOTE_USER="admin"
 REMOTE_PASS='nSx--T@!@dm!n#nsxT@2!'
