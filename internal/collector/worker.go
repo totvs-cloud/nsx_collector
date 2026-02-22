@@ -181,6 +181,60 @@ func (w *Worker) Collect(ctx context.Context) {
 		logger.Debug("ns-services collected", zap.Int64("count", svcCount))
 	}
 
+	// 7. Load Balancer — services, virtual servers, pool members
+	lbServices, err := w.client.GetLBServices(ctx)
+	if err != nil {
+		logger.Warn("lb services list failed", zap.Error(err))
+		telemetry.CollectErrors.WithLabelValues(site, "lb_services").Inc()
+	} else if len(lbServices) > 0 {
+		// Build resolution maps: UUID → metadata (for name/IP/port tags on status points)
+		lbVServers, err := w.client.GetLBVirtualServers(ctx)
+		if err != nil {
+			logger.Warn("lb virtual servers list failed", zap.Error(err))
+			telemetry.CollectErrors.WithLabelValues(site, "lb_services").Inc()
+		}
+		vsMap := make(map[string]nsx.LBVirtualServer, len(lbVServers))
+		for _, vs := range lbVServers {
+			vsMap[vs.ID] = vs
+		}
+
+		lbPools, err := w.client.GetLBPools(ctx)
+		if err != nil {
+			logger.Warn("lb pools list failed", zap.Error(err))
+			telemetry.CollectErrors.WithLabelValues(site, "lb_services").Inc()
+		}
+		poolMap := make(map[string]nsx.LBPool, len(lbPools))
+		for _, p := range lbPools {
+			poolMap[p.ID] = p
+		}
+
+		for i := range lbServices {
+			svc := &lbServices[i]
+			status, err := w.client.GetLBServiceStatus(ctx, svc.ID)
+			if err != nil {
+				logger.Warn("lb service status failed",
+					zap.String("service", svc.DisplayName),
+					zap.Error(err),
+				)
+				telemetry.CollectErrors.WithLabelValues(site, "lb_service_status").Inc()
+				continue
+			}
+
+			points = append(points, influxpkg.LBServicePoint(site, svc, status, now))
+
+			for _, vs := range status.VirtualServers {
+				points = append(points, influxpkg.LBVirtualServerPoint(site, svc.ID, vsMap, vs, now))
+			}
+
+			for _, pool := range status.Pools {
+				points = append(points, influxpkg.LBPoolPoint(site, poolMap, pool, now))
+			}
+		}
+		logger.Debug("lb collected",
+			zap.Int("services", len(lbServices)),
+		)
+	}
+
 	// Write all points
 	if err := w.writer.WritePoints(ctx, points); err != nil {
 		logger.Error("write failed", zap.Error(err))

@@ -219,3 +219,77 @@ type Alarm struct {
 	Summary              string `json:"summary"`
 }
 
+// ---------------------------------------------------------------------------
+// Load Balancer
+// ---------------------------------------------------------------------------
+
+// LBServiceList represents GET /api/v1/loadbalancer/services
+type LBServiceList struct {
+	ResultCount int         `json:"result_count"`
+	Cursor      string      `json:"cursor"`
+	Results     []LBService `json:"results"`
+}
+
+// LBService is one LB service entry (name + ID only; status fetched separately).
+type LBService struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name"`
+}
+
+// LBVirtualServerList represents GET /api/v1/loadbalancer/virtual-servers
+type LBVirtualServerList struct {
+	ResultCount int               `json:"result_count"`
+	Cursor      string            `json:"cursor"`
+	Results     []LBVirtualServer `json:"results"`
+}
+
+// LBVirtualServer carries the metadata needed to tag VS status points.
+type LBVirtualServer struct {
+	ID          string   `json:"id"`
+	DisplayName string   `json:"display_name"`
+	IPAddress   string   `json:"ip_address"`
+	Ports       []string `json:"ports"`       // e.g. ["80", "443"]
+	IPProtocol  string   `json:"ip_protocol"` // TCP | UDP
+}
+
+// LBPoolList represents GET /api/v1/loadbalancer/pools
+type LBPoolList struct {
+	ResultCount int      `json:"result_count"`
+	Cursor      string   `json:"cursor"`
+	Results     []LBPool `json:"results"`
+}
+
+// LBPool is one server pool entry.
+type LBPool struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name"`
+}
+
+// LBServiceStatus represents GET /api/v1/loadbalancer/services/{id}/status
+// It carries the health of the service itself plus all its VS and pool members.
+type LBServiceStatus struct {
+	ServiceID      string          `json:"service_id"`
+	ServiceStatus  string          `json:"service_status"` // UP | DOWN | ERROR | NO_ALARM | DETACHED
+	VirtualServers []LBVSStatus    `json:"virtual_servers"`
+	Pools          []LBPoolStatus  `json:"pools"`
+}
+
+// LBVSStatus is the per-virtual-server status block inside LBServiceStatus.
+type LBVSStatus struct {
+	VirtualServerID     string `json:"virtual_server_id"`
+	VirtualServerStatus string `json:"virtual_server_status"` // UP | DOWN | ERROR | NO_ALARM
+}
+
+// LBPoolStatus is the per-pool status block inside LBServiceStatus.
+type LBPoolStatus struct {
+	PoolID     string           `json:"pool_id"`
+	PoolStatus string           `json:"pool_status"` // UP | DOWN | PARTIALLY_UP | UNKNOWN
+	Members    []LBMemberStatus `json:"members"`
+}
+
+// LBMemberStatus is an individual server member inside a pool.
+type LBMemberStatus struct {
+	IPAddress string `json:"ip_address"`
+	Port      string `json:"port"`
+	Status    string `json:"status"` // UP | DOWN | DISABLED | GRACEFUL_DISABLED
+}

@@ -151,3 +151,86 @@ func (c *Client) GetActiveAlarms(ctx context.Context) ([]Alarm, error) {
 	return all, nil
 }
 
+// ---------------------------------------------------------------------------
+// Load Balancer
+// ---------------------------------------------------------------------------
+
+// GetLBServices returns all LB service entries (ID + name), paginating automatically.
+func (c *Client) GetLBServices(ctx context.Context) ([]LBService, error) {
+	var all []LBService
+	cursor := ""
+	for {
+		path := "/api/v1/loadbalancer/services?page_size=100"
+		if cursor != "" {
+			path += "&cursor=" + cursor
+		}
+		var page LBServiceList
+		if err := c.doGet(ctx, path, &page); err != nil {
+			return nil, fmt.Errorf("lb services: %w", err)
+		}
+		all = append(all, page.Results...)
+		if page.Cursor == "" || len(page.Results) == 0 {
+			break
+		}
+		cursor = page.Cursor
+	}
+	return all, nil
+}
+
+// GetLBVirtualServers returns all LB virtual server entries (ID, name, IP, ports, protocol),
+// paginating automatically. Used to build a name-resolution map for status points.
+func (c *Client) GetLBVirtualServers(ctx context.Context) ([]LBVirtualServer, error) {
+	var all []LBVirtualServer
+	cursor := ""
+	for {
+		path := "/api/v1/loadbalancer/virtual-servers?page_size=100"
+		if cursor != "" {
+			path += "&cursor=" + cursor
+		}
+		var page LBVirtualServerList
+		if err := c.doGet(ctx, path, &page); err != nil {
+			return nil, fmt.Errorf("lb virtual servers: %w", err)
+		}
+		all = append(all, page.Results...)
+		if page.Cursor == "" || len(page.Results) == 0 {
+			break
+		}
+		cursor = page.Cursor
+	}
+	return all, nil
+}
+
+// GetLBPools returns all LB server pool entries (ID + name), paginating automatically.
+// Used to build a name-resolution map for pool status points.
+func (c *Client) GetLBPools(ctx context.Context) ([]LBPool, error) {
+	var all []LBPool
+	cursor := ""
+	for {
+		path := "/api/v1/loadbalancer/pools?page_size=100"
+		if cursor != "" {
+			path += "&cursor=" + cursor
+		}
+		var page LBPoolList
+		if err := c.doGet(ctx, path, &page); err != nil {
+			return nil, fmt.Errorf("lb pools: %w", err)
+		}
+		all = append(all, page.Results...)
+		if page.Cursor == "" || len(page.Results) == 0 {
+			break
+		}
+		cursor = page.Cursor
+	}
+	return all, nil
+}
+
+// GetLBServiceStatus returns the full health status for one LB service, including
+// the status of all its virtual servers and pool members.
+func (c *Client) GetLBServiceStatus(ctx context.Context, serviceID string) (*LBServiceStatus, error) {
+	var result LBServiceStatus
+	path := "/api/v1/loadbalancer/services/" + serviceID + "/status"
+	if err := c.doGet(ctx, path, &result); err != nil {
+		return nil, fmt.Errorf("lb service status %s: %w", serviceID, err)
+	}
+	return &result, nil
+}
+

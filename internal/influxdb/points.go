@@ -204,6 +204,115 @@ func CapacityPoint(site string, item *nsx.CapacityUsageItem, now time.Time) *wri
 	)
 }
 
+// ---------------------------------------------------------------------------
+// Load Balancer
+// ---------------------------------------------------------------------------
+
+// lbPoolStatusInt converts NSX pool status to a sortable integer.
+// UP=2, PARTIALLY_UP=1, DOWN/UNKNOWN/other=0 — enables green/yellow/red thresholds.
+func lbPoolStatusInt(s string) int64 {
+	switch s {
+	case "UP":
+		return 2
+	case "PARTIALLY_UP":
+		return 1
+	}
+	return 0
+}
+
+// LBServicePoint converts an LB service and its status to an InfluxDB point.
+// measurement: nsx_lb_service
+// tags: site, service_id, service_name
+// fields: status (UP=1 / else=0)
+func LBServicePoint(site string, svc *nsx.LBService, status *nsx.LBServiceStatus, now time.Time) *write.Point {
+	return influxdb2.NewPoint(
+		"nsx_lb_service",
+		map[string]string{
+			"site":         site,
+			"service_id":   svc.ID,
+			"service_name": svc.DisplayName,
+		},
+		map[string]interface{}{
+			"status": statusInt(status.ServiceStatus, "UP"),
+		},
+		now,
+	)
+}
+
+// LBVirtualServerPoint converts one VS status entry to an InfluxDB point.
+// vsMap maps VS UUID → LBVirtualServer (for name/IP/port/protocol lookup).
+// If the VS ID is not in the map, name/IP/port/protocol are left as "-".
+// measurement: nsx_lb_virtual_server
+// tags: site, service_id, vs_id, vs_name, ip_address, port, protocol
+// fields: status (UP=1 / else=0)
+func LBVirtualServerPoint(site, serviceID string, vsMap map[string]nsx.LBVirtualServer, vs nsx.LBVSStatus, now time.Time) *write.Point {
+	vsName, ipAddr, port, proto := "-", "-", "-", "-"
+	if meta, ok := vsMap[vs.VirtualServerID]; ok {
+		vsName = meta.DisplayName
+		ipAddr = meta.IPAddress
+		proto = meta.IPProtocol
+		if len(meta.Ports) > 0 {
+			port = meta.Ports[0]
+		}
+	}
+	return influxdb2.NewPoint(
+		"nsx_lb_virtual_server",
+		map[string]string{
+			"site":       site,
+			"service_id": serviceID,
+			"vs_id":      vs.VirtualServerID,
+			"vs_name":    vsName,
+			"ip_address": ipAddr,
+			"port":       port,
+			"protocol":   proto,
+		},
+		map[string]interface{}{
+			"status": statusInt(vs.VirtualServerStatus, "UP"),
+		},
+		now,
+	)
+}
+
+// LBPoolPoint converts one pool status entry (with its members) to an InfluxDB point.
+// poolMap maps pool UUID → LBPool (for name lookup).
+// measurement: nsx_lb_pool
+// tags: site, pool_id, pool_name
+// fields: status (UP=2, PARTIALLY_UP=1, else=0), members_up, members_down, members_disabled
+func LBPoolPoint(site string, poolMap map[string]nsx.LBPool, pool nsx.LBPoolStatus, now time.Time) *write.Point {
+	poolName := "-"
+	if meta, ok := poolMap[pool.PoolID]; ok {
+		poolName = meta.DisplayName
+	}
+
+	var membersUp, membersDown, membersDisabled int64
+	for _, m := range pool.Members {
+		switch m.Status {
+		case "UP":
+			membersUp++
+		case "DISABLED", "GRACEFUL_DISABLED":
+			membersDisabled++
+		default:
+			membersDown++
+		}
+	}
+
+	return influxdb2.NewPoint(
+		"nsx_lb_pool",
+		map[string]string{
+			"site":      site,
+			"pool_id":   pool.PoolID,
+			"pool_name": poolName,
+		},
+		map[string]interface{}{
+			"status":            lbPoolStatusInt(pool.PoolStatus),
+			"members_up":        membersUp,
+			"members_down":      membersDown,
+			"members_disabled":  membersDisabled,
+		},
+		now,
+	)
+}
+
 // EdgeUplinkStatsPoint converts interface stats for a physical Edge uplink to an InfluxDB point.
 // All fields are cumulative counters — use derivative() in Flux to compute throughput rates.
 // link_speed_mbps is the negotiated link speed in Mbps (0 = unknown/not connected).
