@@ -234,6 +234,7 @@ type LBServiceList struct {
 type LBService struct {
 	ID          string `json:"id"`
 	DisplayName string `json:"display_name"`
+	Size        string `json:"size"` // SMALL | MEDIUM | LARGE | XLARGE | DLB
 }
 
 // LBVirtualServerList represents GET /api/v1/loadbalancer/virtual-servers

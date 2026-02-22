@@ -220,20 +220,37 @@ func lbPoolStatusInt(s string) int64 {
 	return 0
 }
 
+// lbStatusInt maps NSX LB service/VS status to a sortable integer.
+// UP=2, DEGRADED=1, DOWN/ERROR/DETACHED/NO_ALARM/other=0.
+func lbStatusInt(s string) int64 {
+	switch s {
+	case "UP":
+		return 2
+	case "DEGRADED":
+		return 1
+	}
+	return 0
+}
+
 // LBServicePoint converts an LB service and its status to an InfluxDB point.
 // measurement: nsx_lb_service
-// tags: site, service_id, service_name
-// fields: status (UP=1 / else=0)
+// tags: site, service_id, service_name, size
+// fields: status (UP=2, DEGRADED=1, else=0)
 func LBServicePoint(site string, svc *nsx.LBService, status *nsx.LBServiceStatus, now time.Time) *write.Point {
+	size := svc.Size
+	if size == "" {
+		size = "-"
+	}
 	return influxdb2.NewPoint(
 		"nsx_lb_service",
 		map[string]string{
 			"site":         site,
 			"service_id":   svc.ID,
 			"service_name": svc.DisplayName,
+			"size":         size,
 		},
 		map[string]interface{}{
-			"status": statusInt(status.ServiceStatus, "UP"),
+			"status": lbStatusInt(status.ServiceStatus),
 		},
 		now,
 	)
@@ -244,7 +261,7 @@ func LBServicePoint(site string, svc *nsx.LBService, status *nsx.LBServiceStatus
 // If the VS ID is not in the map, name/IP/port/protocol are left as "-".
 // measurement: nsx_lb_virtual_server
 // tags: site, service_id, vs_id, vs_name, ip_address, port, protocol
-// fields: status (UP=1 / else=0)
+// fields: status (UP=2, DEGRADED=1, else=0)
 func LBVirtualServerPoint(site, serviceID string, vsMap map[string]nsx.LBVirtualServer, vs nsx.LBVSStatus, now time.Time) *write.Point {
 	vsName, ipAddr, port, proto := "-", "-", "-", "-"
 	if meta, ok := vsMap[vs.VirtualServerID]; ok {
@@ -267,7 +284,7 @@ func LBVirtualServerPoint(site, serviceID string, vsMap map[string]nsx.LBVirtual
 			"protocol":   proto,
 		},
 		map[string]interface{}{
-			"status": statusInt(vs.VirtualServerStatus, "UP"),
+			"status": lbStatusInt(vs.VirtualServerStatus),
 		},
 		now,
 	)
