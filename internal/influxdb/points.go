@@ -221,10 +221,11 @@ func lbPoolStatusInt(s string) int64 {
 }
 
 // lbStatusInt maps NSX LB service/VS status to a sortable integer.
-// UP=2, DEGRADED=1, DOWN/ERROR/DETACHED/NO_ALARM/other=0.
+// UP/SUCCESS/NO_ALARM=2, DEGRADED=1, DOWN/ERROR/DETACHED/other=0.
+// NSX may return "SUCCESS" (Policy API style) or "NO_ALARM" for healthy resources.
 func lbStatusInt(s string) int64 {
 	switch s {
-	case "UP":
+	case "UP", "SUCCESS", "NO_ALARM":
 		return 2
 	case "DEGRADED":
 		return 1
@@ -234,8 +235,10 @@ func lbStatusInt(s string) int64 {
 
 // LBServicePoint converts an LB service and its status to an InfluxDB point.
 // measurement: nsx_lb_service
-// tags: site, service_id, service_name, size
-// fields: status (UP=2, DEGRADED=1, else=0)
+// tags: site, service_id, service_name
+// fields: status (UP/SUCCESS/NO_ALARM=2, DEGRADED=1, else=0), size (string)
+// Note: size is a field, not a tag, to avoid series cardinality explosion when
+// size is absent from older NSX API responses.
 func LBServicePoint(site string, svc *nsx.LBService, status *nsx.LBServiceStatus, now time.Time) *write.Point {
 	size := svc.Size
 	if size == "" {
@@ -247,10 +250,10 @@ func LBServicePoint(site string, svc *nsx.LBService, status *nsx.LBServiceStatus
 			"site":         site,
 			"service_id":   svc.ID,
 			"service_name": svc.DisplayName,
-			"size":         size,
 		},
 		map[string]interface{}{
 			"status": lbStatusInt(status.ServiceStatus),
+			"size":   size,
 		},
 		now,
 	)
