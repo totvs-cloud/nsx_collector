@@ -222,13 +222,13 @@ func lbPoolStatusInt(s string) int64 {
 }
 
 // lbStatusInt maps NSX LB service/VS status to a sortable integer.
-// UP/SUCCESS/NO_ALARM=2, DEGRADED=1, DOWN/ERROR/DETACHED/other=0.
-// Case-insensitive: NSX may return "SUCCESS", "Down", "Degraded", "Success", etc.
+// UP/SUCCESS/NO_ALARM=2, DEGRADED/PARTIALLY_UP=1, DOWN/ERROR/DETACHED/other=0.
+// Case-insensitive. VS statuses confirmed from API: UP, DOWN, PARTIALLY_UP.
 func lbStatusInt(s string) int64 {
 	switch strings.ToUpper(s) {
 	case "UP", "SUCCESS", "NO_ALARM":
 		return 2
-	case "DEGRADED":
+	case "DEGRADED", "PARTIALLY_UP":
 		return 1
 	}
 	return 0
