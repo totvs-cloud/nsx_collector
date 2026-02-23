@@ -1,6 +1,7 @@
 package influxdb
 
 import (
+	"strings"
 	"time"
 
 	"github.com/influxdata/influxdb-client-go/v2/api/write"
@@ -222,9 +223,9 @@ func lbPoolStatusInt(s string) int64 {
 
 // lbStatusInt maps NSX LB service/VS status to a sortable integer.
 // UP/SUCCESS/NO_ALARM=2, DEGRADED=1, DOWN/ERROR/DETACHED/other=0.
-// NSX may return "SUCCESS" (Policy API style) or "NO_ALARM" for healthy resources.
+// Case-insensitive: NSX may return "SUCCESS", "Down", "Degraded", "Success", etc.
 func lbStatusInt(s string) int64 {
-	switch s {
+	switch strings.ToUpper(s) {
 	case "UP", "SUCCESS", "NO_ALARM":
 		return 2
 	case "DEGRADED":
