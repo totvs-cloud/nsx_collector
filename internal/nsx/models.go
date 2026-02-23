@@ -278,13 +278,13 @@ type LBServiceStatus struct {
 // LBVSStatus is the per-virtual-server status block inside LBServiceStatus.
 type LBVSStatus struct {
 	VirtualServerID     string `json:"virtual_server_id"`
-	VirtualServerStatus string `json:"virtual_server_status"` // UP | DOWN | ERROR | NO_ALARM
+	VirtualServerStatus string `json:"status"` // UP | DOWN | ERROR | NO_ALARM
 }
 
 // LBPoolStatus is the per-pool status block inside LBServiceStatus.
 type LBPoolStatus struct {
 	PoolID     string           `json:"pool_id"`
-	PoolStatus string           `json:"pool_status"` // UP | DOWN | PARTIALLY_UP | UNKNOWN
+	PoolStatus string           `json:"status"` // UP | DOWN | PARTIALLY_UP | UNKNOWN
 	Members    []LBMemberStatus `json:"members"`
 }
 
