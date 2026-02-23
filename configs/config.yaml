@@ -14,3 +14,4 @@ telemetry:
 intervals:
   default: 40s
   traffic: 15s
+  slow: 5m    # alarms, capacity, LB — dados que mudam lentamente

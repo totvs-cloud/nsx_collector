@@ -16,20 +16,23 @@ import (
 
 // Worker collects all NSX metrics for a single manager and writes to InfluxDB.
 type Worker struct {
-	manager config.Manager
-	client  *nsx.Client
-	writer  *influxpkg.Writer
-	logger  *zap.Logger
+	manager      config.Manager
+	client       *nsx.Client
+	writer       *influxpkg.Writer
+	logger       *zap.Logger
+	slowInterval time.Duration
+	lastSlow     time.Time
 }
 
 // NewWorker creates a new collector worker for the given manager.
-func NewWorker(mgr config.Manager, writer *influxpkg.Writer) *Worker {
+func NewWorker(mgr config.Manager, writer *influxpkg.Writer, intervals config.IntervalConfig) *Worker {
 	client := nsx.NewClient(mgr.URL, mgr.Username, mgr.Password, mgr.TLSSkipVerify)
 	return &Worker{
-		manager: mgr,
-		client:  client,
-		writer:  writer,
-		logger:  zap.L().Named(mgr.Site),
+		manager:      mgr,
+		client:       client,
+		writer:       writer,
+		logger:       zap.L().Named(mgr.Site),
+		slowInterval: intervals.Slow,
 	}
 }
 
@@ -48,6 +51,13 @@ func (w *Worker) Collect(ctx context.Context) {
 
 	now := time.Now()
 	var points []*write.Point
+
+	// Determine whether to run slow-path sections (alarms, capacity, LB).
+	// On the very first cycle lastSlow is zero, so runSlow is true.
+	runSlow := w.lastSlow.IsZero() || time.Since(w.lastSlow) >= w.slowInterval
+	if runSlow {
+		w.lastSlow = now
+	}
 
 	// 1. Cluster status
 	if cs, err := w.client.GetClusterStatus(ctx); err != nil {
@@ -144,95 +154,97 @@ func (w *Worker) Collect(ctx context.Context) {
 		logger.Debug("logical routers collected", zap.Int("count", len(routers)))
 	}
 
-	// 4. Active alarms (NSX faults)
-	alarms, err := w.client.GetActiveAlarms(ctx)
-	if err != nil {
-		logger.Warn("alarms failed", zap.Error(err))
-		telemetry.CollectErrors.WithLabelValues(site, "alarms").Inc()
-	} else {
-		for i := range alarms {
-			points = append(points, influxpkg.AlarmPoint(site, &alarms[i], now))
-		}
-		logger.Debug("alarms collected", zap.Int("count", len(alarms)))
-	}
-
-	// 5. Capacity usage
-	capacities, err := w.client.GetCapacityUsage(ctx)
-	if err != nil {
-		logger.Warn("capacity usage failed", zap.Error(err))
-		telemetry.CollectErrors.WithLabelValues(site, "capacity").Inc()
-	} else {
-		for i := range capacities {
-			points = append(points, influxpkg.CapacityPoint(site, &capacities[i], now))
-		}
-		logger.Debug("capacity collected", zap.Int("count", len(capacities)))
-	}
-
-	// 6. NS Services count
-	if svcCount, err := w.client.GetNSServicesCount(ctx); err != nil {
-		logger.Warn("ns-services count failed", zap.Error(err))
-		telemetry.CollectErrors.WithLabelValues(site, "ns_services").Inc()
-	} else {
-		points = append(points, influxpkg.CapacityPoint(site, &nsx.CapacityUsageItem{
-			UsageType:         "NUMBER_OF_NS_SERVICES",
-			DisplayName:       "NS Services",
-			CurrentUsageCount: svcCount,
-		}, now))
-		logger.Debug("ns-services collected", zap.Int64("count", svcCount))
-	}
-
-	// 7. Load Balancer — services, virtual servers, pool members
-	lbServices, err := w.client.GetLBServices(ctx)
-	if err != nil {
-		logger.Warn("lb services list failed", zap.Error(err))
-		telemetry.CollectErrors.WithLabelValues(site, "lb_services").Inc()
-	} else if len(lbServices) > 0 {
-		// Build resolution maps: UUID → metadata (for name/IP/port tags on status points)
-		lbVServers, err := w.client.GetLBVirtualServers(ctx)
+	if runSlow {
+		// 4. Active alarms (NSX faults)
+		alarms, err := w.client.GetActiveAlarms(ctx)
 		if err != nil {
-			logger.Warn("lb virtual servers list failed", zap.Error(err))
-			telemetry.CollectErrors.WithLabelValues(site, "lb_services").Inc()
-		}
-		vsMap := make(map[string]nsx.LBVirtualServer, len(lbVServers))
-		for _, vs := range lbVServers {
-			vsMap[vs.ID] = vs
+			logger.Warn("alarms failed", zap.Error(err))
+			telemetry.CollectErrors.WithLabelValues(site, "alarms").Inc()
+		} else {
+			for i := range alarms {
+				points = append(points, influxpkg.AlarmPoint(site, &alarms[i], now))
+			}
+			logger.Debug("alarms collected", zap.Int("count", len(alarms)))
 		}
 
-		lbPools, err := w.client.GetLBPools(ctx)
+		// 5. Capacity usage
+		capacities, err := w.client.GetCapacityUsage(ctx)
 		if err != nil {
-			logger.Warn("lb pools list failed", zap.Error(err))
-			telemetry.CollectErrors.WithLabelValues(site, "lb_services").Inc()
-		}
-		poolMap := make(map[string]nsx.LBPool, len(lbPools))
-		for _, p := range lbPools {
-			poolMap[p.ID] = p
+			logger.Warn("capacity usage failed", zap.Error(err))
+			telemetry.CollectErrors.WithLabelValues(site, "capacity").Inc()
+		} else {
+			for i := range capacities {
+				points = append(points, influxpkg.CapacityPoint(site, &capacities[i], now))
+			}
+			logger.Debug("capacity collected", zap.Int("count", len(capacities)))
 		}
 
-		for i := range lbServices {
-			svc := &lbServices[i]
-			status, err := w.client.GetLBServiceStatus(ctx, svc.ID)
+		// 6. NS Services count
+		if svcCount, err := w.client.GetNSServicesCount(ctx); err != nil {
+			logger.Warn("ns-services count failed", zap.Error(err))
+			telemetry.CollectErrors.WithLabelValues(site, "ns_services").Inc()
+		} else {
+			points = append(points, influxpkg.CapacityPoint(site, &nsx.CapacityUsageItem{
+				UsageType:         "NUMBER_OF_NS_SERVICES",
+				DisplayName:       "NS Services",
+				CurrentUsageCount: svcCount,
+			}, now))
+			logger.Debug("ns-services collected", zap.Int64("count", svcCount))
+		}
+
+		// 7. Load Balancer — services, virtual servers, pool members
+		lbServices, err := w.client.GetLBServices(ctx)
+		if err != nil {
+			logger.Warn("lb services list failed", zap.Error(err))
+			telemetry.CollectErrors.WithLabelValues(site, "lb_services").Inc()
+		} else if len(lbServices) > 0 {
+			// Build resolution maps: UUID → metadata (for name/IP/port tags on status points)
+			lbVServers, err := w.client.GetLBVirtualServers(ctx)
 			if err != nil {
-				logger.Warn("lb service status failed",
-					zap.String("service", svc.DisplayName),
-					zap.Error(err),
-				)
-				telemetry.CollectErrors.WithLabelValues(site, "lb_service_status").Inc()
-				continue
+				logger.Warn("lb virtual servers list failed", zap.Error(err))
+				telemetry.CollectErrors.WithLabelValues(site, "lb_services").Inc()
+			}
+			vsMap := make(map[string]nsx.LBVirtualServer, len(lbVServers))
+			for _, vs := range lbVServers {
+				vsMap[vs.ID] = vs
 			}
 
-			points = append(points, influxpkg.LBServicePoint(site, svc, status, now))
-
-			for _, vs := range status.VirtualServers {
-				points = append(points, influxpkg.LBVirtualServerPoint(site, svc.ID, vsMap, vs, now))
+			lbPools, err := w.client.GetLBPools(ctx)
+			if err != nil {
+				logger.Warn("lb pools list failed", zap.Error(err))
+				telemetry.CollectErrors.WithLabelValues(site, "lb_services").Inc()
+			}
+			poolMap := make(map[string]nsx.LBPool, len(lbPools))
+			for _, p := range lbPools {
+				poolMap[p.ID] = p
 			}
 
-			for _, pool := range status.Pools {
-				points = append(points, influxpkg.LBPoolPoint(site, poolMap, pool, now))
+			for i := range lbServices {
+				svc := &lbServices[i]
+				status, err := w.client.GetLBServiceStatus(ctx, svc.ID)
+				if err != nil {
+					logger.Warn("lb service status failed",
+						zap.String("service", svc.DisplayName),
+						zap.Error(err),
+					)
+					telemetry.CollectErrors.WithLabelValues(site, "lb_service_status").Inc()
+					continue
+				}
+
+				points = append(points, influxpkg.LBServicePoint(site, svc, status, now))
+
+				for _, vs := range status.VirtualServers {
+					points = append(points, influxpkg.LBVirtualServerPoint(site, svc.ID, vsMap, vs, now))
+				}
+
+				for _, pool := range status.Pools {
+					points = append(points, influxpkg.LBPoolPoint(site, poolMap, pool, now))
+				}
 			}
+			logger.Debug("lb collected",
+				zap.Int("services", len(lbServices)),
+			)
 		}
-		logger.Debug("lb collected",
-			zap.Int("services", len(lbServices)),
-		)
 	}
 
 	// Write all points

@@ -40,8 +40,9 @@ type TelemetryConfig struct {
 
 // IntervalConfig holds collection interval settings.
 type IntervalConfig struct {
-	Default time.Duration `yaml:"default"` // for cluster, nodes, routers, BGP
+	Default time.Duration `yaml:"default"` // for cluster, nodes, routers
 	Traffic time.Duration `yaml:"traffic"` // for interface throughput (future)
+	Slow    time.Duration `yaml:"slow"`    // for alarms, capacity, LB (changes slowly)
 }
 
 // LoadConfig reads and parses the collector config file.
@@ -100,5 +101,8 @@ func (c *Config) setDefaults() {
 	}
 	if c.Intervals.Traffic == 0 {
 		c.Intervals.Traffic = 15 * time.Second
+	}
+	if c.Intervals.Slow == 0 {
+		c.Intervals.Slow = 5 * time.Minute
 	}
 }

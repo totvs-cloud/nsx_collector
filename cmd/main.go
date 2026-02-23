@@ -63,7 +63,7 @@ func main() {
 	// Build workers (one per manager)
 	var workers []*collector.Worker
 	for _, mgr := range managers {
-		workers = append(workers, collector.NewWorker(mgr, writer))
+		workers = append(workers, collector.NewWorker(mgr, writer, cfg.Intervals))
 		logger.Info("manager registered",
 			zap.String("site", mgr.Site),
 			zap.String("url", mgr.URL),
@@ -98,6 +98,7 @@ func main() {
 		zap.String("influxdb", cfg.InfluxDB.URL),
 		zap.String("bucket", cfg.InfluxDB.Bucket),
 		zap.Duration("interval", cfg.Intervals.Default),
+		zap.Duration("slow_interval", cfg.Intervals.Slow),
 	)
 
 	// Start scheduler (blocks until context cancelled)
