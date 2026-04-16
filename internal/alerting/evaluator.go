@@ -49,7 +49,7 @@ func NewEvaluator(slack *SlackClient, grafana *GrafanaConfig, logger *zap.Logger
 		cooldownDuration: 15 * time.Minute,
 		avgWindow:        5 * time.Minute,
 		avgThreshold:     80,
-		warnThreshold:    90,
+		warnThreshold:    10, // TEMPORARIO: voltar para 90 após teste
 	}
 }
 
