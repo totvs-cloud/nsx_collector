@@ -87,17 +87,12 @@ type uploadURLResp struct {
 }
 
 func (sc *SlackClient) getUploadURL(filename string, length int) (string, string, error) {
-	payload := map[string]any{
-		"filename": filename,
-		"length":   length,
-	}
-	body, _ := json.Marshal(payload)
-	req, err := http.NewRequest("POST", "https://slack.com/api/files.getUploadURLExternal", bytes.NewReader(body))
+	url := fmt.Sprintf("https://slack.com/api/files.getUploadURLExternal?filename=%s&length=%d", filename, length)
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return "", "", err
 	}
 	req.Header.Set("Authorization", "Bearer "+sc.token)
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 
 	resp, err := sc.http.Do(req)
 	if err != nil {
