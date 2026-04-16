@@ -17,6 +17,15 @@ intervals:
   traffic: 15s
   slow: 5m    # alarms, capacity, LB — dados que mudam lentamente
 
+slack:
+  enabled: true
+  bot_token_env: "SLACK_BOT_TOKEN"
+  channel: "C0ATGN70RRQ"
+  grafana_url: "http://10.114.35.75:3000"
+  dashboard_url: "http://network-grafana.cloudtotvs.com.br:3000/d/ffjaqhj6lei2ob/nsx-edge-bandwidth"
+  grafana_key_env: "GRAFANA_API_KEY"
+  rx_util_panel_id: "5"
+
 # Overrides de velocidade para interfaces onde a API NSX retorna link_speed = 0
 # (comum em interfaces DPDK/fastpath fp-* em Edge nodes bare-metal).
 # Formato: node_name -> interface_id -> velocidade em Mbps.
