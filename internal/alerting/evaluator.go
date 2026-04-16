@@ -49,7 +49,7 @@ func NewEvaluator(slack *SlackClient, grafana *GrafanaConfig, logger *zap.Logger
 		cooldownDuration: 5 * time.Minute,
 		avgWindow:        5 * time.Minute,
 		avgThreshold:     80,
-		warnThreshold:    90,
+		warnThreshold:    10,
 	}
 }
 
@@ -115,11 +115,6 @@ func (e *Evaluator) addSample(key string, rxPct, txPct float64, now time.Time) {
 func (e *Evaluator) formatAlert(site, nodeName, ifaceID, direction string, bps, utilPct float64, linkSpeedMbps int64, rxErrors, txErrors int64) string {
 	dashLink := e.dashboardLink(nodeName)
 
-	errMsg := ""
-	if rxErrors > 0 || txErrors > 0 {
-		errMsg = fmt.Sprintf(" - Erros: RX:%d/s TX:%d/s", rxErrors, txErrors)
-	}
-
 	icon := ":warning:"
 	level := "WARNING"
 	if utilPct >= 99 {
@@ -128,12 +123,11 @@ func (e *Evaluator) formatAlert(site, nodeName, ifaceID, direction string, bps, 
 	}
 
 	return fmt.Sprintf(
-		"%s *NSX Edge Capacity %s*\n%s - `%s`  `%s`  %s: %s / %d Gbps (*%.1f%%*)%s\n<%s|Ver no Grafana>",
+		"%s *NSX Edge Capacity %s*\n`%s`  `%s`  %s: %s / %d Gbps (*%.1f%%*) - Erros: RX:%d/s TX:%d/s\n<%s|Ver no Grafana>",
 		icon, level,
-		time.Now().Format("02/01/2006 15:04:05"),
 		nodeName, ifaceID,
 		direction, formatBps(bps), linkSpeedMbps/1000, utilPct,
-		errMsg,
+		rxErrors, txErrors,
 		dashLink,
 	)
 }
