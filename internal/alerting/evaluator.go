@@ -115,9 +115,9 @@ func (e *Evaluator) addSample(key string, rxPct, txPct float64, now time.Time) {
 func (e *Evaluator) formatAlert(site, nodeName, ifaceID, direction string, bps, utilPct float64, linkSpeedMbps int64, rxErrors, txErrors int64) string {
 	dashLink := e.dashboardLink(nodeName)
 
-	errMsg := "Nenhum"
+	errMsg := ""
 	if rxErrors > 0 || txErrors > 0 {
-		errMsg = fmt.Sprintf("RX: %d/s | TX: %d/s", rxErrors, txErrors)
+		errMsg = fmt.Sprintf(" - Erros: RX:%d/s TX:%d/s", rxErrors, txErrors)
 	}
 
 	icon := ":warning:"
@@ -128,21 +128,11 @@ func (e *Evaluator) formatAlert(site, nodeName, ifaceID, direction string, bps, 
 	}
 
 	return fmt.Sprintf(
-		"%s *NSX Edge Capacity %s*\n%s\n\n"+
-			"*Edge Node:* `%s`\n"+
-			"*Interface:* `%s`\n"+
-			"*Site:* %s\n\n"+
-			"*%s:* %s / %d Gbps (*%.1f%%*)\n"+
-			"*Link Speed:* %d Mbps\n"+
-			"*Erros:* %s\n\n"+
-			":chart_with_upwards_trend: <%s|Ver no Grafana>",
+		"%s *NSX Edge Capacity %s*\n%s - `%s`  `%s`  %s: %s / %d Gbps (*%.1f%%*)%s\n<%s|Ver no Grafana>",
 		icon, level,
 		time.Now().Format("02/01/2006 15:04:05"),
-		nodeName,
-		ifaceID,
-		site,
+		nodeName, ifaceID,
 		direction, formatBps(bps), linkSpeedMbps/1000, utilPct,
-		linkSpeedMbps,
 		errMsg,
 		dashLink,
 	)
