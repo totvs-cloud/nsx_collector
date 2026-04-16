@@ -360,3 +360,26 @@ func EdgeUplinkStatsPoint(site, nodeID, nodeName string, iface *nsx.NetworkInter
 		now,
 	)
 }
+
+// EdgeUplinkRatePoint writes pre-calculated bandwidth rates for an Edge uplink.
+// Unlike EdgeUplinkStatsPoint (cumulative counters), these are ready-to-display
+// rate values — no derivative() needed in Grafana.
+func EdgeUplinkRatePoint(site, nodeID, nodeName, ifaceID string, rxBps, txBps, rxUtilPct, txUtilPct float64, linkSpeedMbps int64, now time.Time) *write.Point {
+	return influxdb2.NewPoint(
+		"nsx_edge_bandwidth",
+		map[string]string{
+			"site":         site,
+			"node_id":      nodeID,
+			"node_name":    nodeName,
+			"interface_id": ifaceID,
+		},
+		map[string]interface{}{
+			"rx_bps":              rxBps,
+			"tx_bps":              txBps,
+			"rx_utilization_pct":  rxUtilPct,
+			"tx_utilization_pct":  txUtilPct,
+			"link_speed_mbps":     linkSpeedMbps,
+		},
+		now,
+	)
+}

@@ -15,6 +15,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
+	"nsx-collector/internal/alerting"
 	"nsx-collector/internal/collector"
 	"nsx-collector/internal/config"
 	influxpkg "nsx-collector/internal/influxdb"
@@ -58,12 +59,26 @@ func main() {
 	influxClient := influxdb2.NewClient(cfg.InfluxDB.URL, cfg.InfluxDB.Token)
 	defer influxClient.Close()
 
-	writer := influxpkg.NewWriter(influxClient, cfg.InfluxDB.Org, cfg.InfluxDB.Bucket)
+	writer := influxpkg.NewWriter(influxClient, cfg.InfluxDB.Org, cfg.InfluxDB.Bucket, cfg.InfluxDB.CapacityBucket)
+
+	// Build alert evaluator (nil if Slack not configured)
+	var alertEval *alerting.Evaluator
+	if cfg.Slack.Enabled && cfg.Slack.Channel != "" {
+		slackToken := os.Getenv(cfg.Slack.BotTokenEnv)
+		if slackToken != "" {
+			slackClient := alerting.NewSlackClient(slackToken, cfg.Slack.Channel)
+			alertEval = alerting.NewEvaluator(slackClient, logger)
+			logger.Info("slack alerting enabled", zap.String("channel", cfg.Slack.Channel))
+		} else {
+			logger.Warn("slack alerting disabled: token env var empty", zap.String("env", cfg.Slack.BotTokenEnv))
+		}
+	}
 
 	// Build workers (one per manager)
+	rateCalc := collector.NewRateCalculator()
 	var workers []*collector.Worker
 	for _, mgr := range managers {
-		workers = append(workers, collector.NewWorker(mgr, writer, cfg.Intervals))
+		workers = append(workers, collector.NewWorker(mgr, writer, cfg.Intervals, cfg.InterfaceSpeeds, rateCalc, alertEval))
 		logger.Info("manager registered",
 			zap.String("site", mgr.Site),
 			zap.String("url", mgr.URL),
@@ -93,13 +108,19 @@ func main() {
 		}()
 	}
 
-	logger.Info("nsx-collector starting",
+	startFields := []zap.Field{
 		zap.Int("managers", len(managers)),
 		zap.String("influxdb", cfg.InfluxDB.URL),
 		zap.String("bucket", cfg.InfluxDB.Bucket),
+	}
+	if cfg.InfluxDB.CapacityBucket != "" {
+		startFields = append(startFields, zap.String("capacity_bucket", cfg.InfluxDB.CapacityBucket))
+	}
+	startFields = append(startFields,
 		zap.Duration("interval", cfg.Intervals.Default),
 		zap.Duration("slow_interval", cfg.Intervals.Slow),
 	)
+	logger.Info("nsx-collector starting", startFields...)
 
 	// Start scheduler (blocks until context cancelled)
 	sched := collector.NewScheduler(workers, cfg.Intervals.Default)

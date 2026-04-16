@@ -8,6 +8,7 @@ import (
 	"github.com/influxdata/influxdb-client-go/v2/api/write"
 	"go.uber.org/zap"
 
+	"nsx-collector/internal/alerting"
 	"nsx-collector/internal/config"
 	influxpkg "nsx-collector/internal/influxdb"
 	"nsx-collector/internal/nsx"
@@ -16,23 +17,31 @@ import (
 
 // Worker collects all NSX metrics for a single manager and writes to InfluxDB.
 type Worker struct {
-	manager      config.Manager
-	client       *nsx.Client
-	writer       *influxpkg.Writer
-	logger       *zap.Logger
-	slowInterval time.Duration
-	lastSlow     time.Time
+	manager         config.Manager
+	client          *nsx.Client
+	writer          *influxpkg.Writer
+	logger          *zap.Logger
+	slowInterval    time.Duration
+	lastSlow        time.Time
+	// speedOverrides maps node_name -> interface_id -> speed_mbps.
+	// Used to override link_speed when the NSX API returns 0 (fp-* DPDK interfaces).
+	speedOverrides  map[string]map[string]int64
+	rateCalc        *RateCalculator
+	alertEval       *alerting.Evaluator
 }
 
 // NewWorker creates a new collector worker for the given manager.
-func NewWorker(mgr config.Manager, writer *influxpkg.Writer, intervals config.IntervalConfig) *Worker {
+func NewWorker(mgr config.Manager, writer *influxpkg.Writer, intervals config.IntervalConfig, speedOverrides map[string]map[string]int64, rateCalc *RateCalculator, alertEval *alerting.Evaluator) *Worker {
 	client := nsx.NewClient(mgr.URL, mgr.Username, mgr.Password, mgr.TLSSkipVerify)
 	return &Worker{
-		manager:      mgr,
-		client:       client,
-		writer:       writer,
-		logger:       zap.L().Named(mgr.Site),
-		slowInterval: intervals.Slow,
+		manager:        mgr,
+		client:         client,
+		writer:         writer,
+		logger:         zap.L().Named(mgr.Site),
+		slowInterval:   intervals.Slow,
+		speedOverrides: speedOverrides,
+		rateCalc:       rateCalc,
+		alertEval:      alertEval,
 	}
 }
 
@@ -51,6 +60,7 @@ func (w *Worker) Collect(ctx context.Context) {
 
 	now := time.Now()
 	var points []*write.Point
+	var capacityPoints []*write.Point
 
 	// Determine whether to run slow-path sections (alarms, capacity, LB).
 	// On the very first cycle lastSlow is zero, so runSlow is true.
@@ -121,7 +131,31 @@ func (w *Worker) Collect(ctx context.Context) {
 							telemetry.CollectErrors.WithLabelValues(site, "edge_interface_stats").Inc()
 							continue
 						}
-						points = append(points, influxpkg.EdgeUplinkStatsPoint(site, nodeID, nodeName, &iface, ifStats, now))
+						// Apply configured speed override when the NSX API returns 0
+						// (common for DPDK/fastpath fp-* interfaces on bare-metal Edge nodes).
+						ifaceResolved := iface
+						if ifaceResolved.LinkSpeed == 0 {
+							if nodeOverrides, ok := w.speedOverrides[nodeName]; ok {
+								if s, ok := nodeOverrides[iface.InterfaceID]; ok && s > 0 {
+									ifaceResolved.LinkSpeed = s
+								}
+							}
+						}
+						points = append(points, influxpkg.EdgeUplinkStatsPoint(site, nodeID, nodeName, &ifaceResolved, ifStats, now))
+
+						if rate := w.rateCalc.Calculate(nodeName, iface.InterfaceID, uint64(ifStats.RxBytes), uint64(ifStats.TxBytes), ifaceResolved.LinkSpeed, now); rate != nil {
+							points = append(points, influxpkg.EdgeUplinkRatePoint(
+								site, nodeID, nodeName, iface.InterfaceID,
+								rate.RxBps, rate.TxBps,
+								rate.RxUtilizationPct, rate.TxUtilizationPct,
+								rate.LinkSpeedMbps, now,
+							))
+							if w.alertEval != nil {
+								w.alertEval.Evaluate(site, nodeName, iface.InterfaceID,
+									rate.RxUtilizationPct, rate.TxUtilizationPct,
+									rate.LinkSpeedMbps, rate.RxBps, rate.TxBps)
+							}
+						}
 					}
 					logger.Debug("edge interfaces evaluated",
 						zap.String("node", nodeName),
@@ -167,24 +201,24 @@ func (w *Worker) Collect(ctx context.Context) {
 			logger.Debug("alarms collected", zap.Int("count", len(alarms)))
 		}
 
-		// 5. Capacity usage
+		// 5. Capacity usage — written to capacity bucket
 		capacities, err := w.client.GetCapacityUsage(ctx)
 		if err != nil {
 			logger.Warn("capacity usage failed", zap.Error(err))
 			telemetry.CollectErrors.WithLabelValues(site, "capacity").Inc()
 		} else {
 			for i := range capacities {
-				points = append(points, influxpkg.CapacityPoint(site, &capacities[i], now))
+				capacityPoints = append(capacityPoints, influxpkg.CapacityPoint(site, &capacities[i], now))
 			}
 			logger.Debug("capacity collected", zap.Int("count", len(capacities)))
 		}
 
-		// 6. NS Services count
+		// 6. NS Services count — written to capacity bucket
 		if svcCount, err := w.client.GetNSServicesCount(ctx); err != nil {
 			logger.Warn("ns-services count failed", zap.Error(err))
 			telemetry.CollectErrors.WithLabelValues(site, "ns_services").Inc()
 		} else {
-			points = append(points, influxpkg.CapacityPoint(site, &nsx.CapacityUsageItem{
+			capacityPoints = append(capacityPoints, influxpkg.CapacityPoint(site, &nsx.CapacityUsageItem{
 				UsageType:         "NUMBER_OF_NS_SERVICES",
 				DisplayName:       "NS Services",
 				CurrentUsageCount: svcCount,
@@ -247,14 +281,22 @@ func (w *Worker) Collect(ctx context.Context) {
 		}
 	}
 
-	// Write all points
+	// Write capacity points to capacity bucket
+	if err := w.writer.WriteCapacityPoints(ctx, capacityPoints); err != nil {
+		logger.Error("capacity write failed", zap.Error(err))
+		telemetry.CollectErrors.WithLabelValues(site, "write_capacity").Inc()
+	} else {
+		telemetry.PointsWritten.WithLabelValues(site).Add(float64(len(capacityPoints)))
+	}
+
+	// Write all other points
 	if err := w.writer.WritePoints(ctx, points); err != nil {
 		logger.Error("write failed", zap.Error(err))
 		telemetry.CollectErrors.WithLabelValues(site, "write").Inc()
 		return
 	}
 	telemetry.PointsWritten.WithLabelValues(site).Add(float64(len(points)))
-	logger.Info("points written", zap.Int("count", len(points)))
+	logger.Info("points written", zap.Int("count", len(points)), zap.Int("capacity", len(capacityPoints)))
 }
 
 // buildT1ToT0Map fetches all logical router ports and builds a map of

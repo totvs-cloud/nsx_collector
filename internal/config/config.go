@@ -11,19 +11,32 @@ import (
 
 // Config holds the nsx-collector configuration.
 type Config struct {
-	InfluxDB  InfluxConfig  `yaml:"influxdb"`
-	Logging   LoggingConfig `yaml:"logging"`
-	Telemetry TelemetryConfig `yaml:"telemetry"`
-	Intervals IntervalConfig `yaml:"intervals"`
+	InfluxDB        InfluxConfig                `yaml:"influxdb"`
+	Logging         LoggingConfig               `yaml:"logging"`
+	Telemetry       TelemetryConfig             `yaml:"telemetry"`
+	Intervals       IntervalConfig              `yaml:"intervals"`
+	Slack           SlackConfig                 `yaml:"slack"`
+	// InterfaceSpeeds overrides link_speed_mbps for interfaces where the NSX API
+	// returns 0 (common for DPDK/fastpath fp-* interfaces on bare-metal Edge nodes).
+	// Format: node_name -> interface_id -> speed in Mbps.
+	InterfaceSpeeds map[string]map[string]int64 `yaml:"interface_speed_overrides"`
+}
+
+// SlackConfig holds Slack alerting settings.
+type SlackConfig struct {
+	Enabled     bool   `yaml:"enabled"`
+	BotTokenEnv string `yaml:"bot_token_env"`
+	Channel     string `yaml:"channel"`
 }
 
 // InfluxConfig holds InfluxDB connection settings.
 type InfluxConfig struct {
-	URL       string `yaml:"url"`
-	Org       string `yaml:"org"`
-	Bucket    string `yaml:"bucket"`
-	TokenFile string `yaml:"token_file"`
-	Token     string `yaml:"-"`
+	URL            string `yaml:"url"`
+	Org            string `yaml:"org"`
+	Bucket         string `yaml:"bucket"`
+	CapacityBucket string `yaml:"capacity_bucket"` // separate bucket for capacity metrics (longer retention)
+	TokenFile      string `yaml:"token_file"`
+	Token          string `yaml:"-"`
 }
 
 // LoggingConfig holds logging settings.
