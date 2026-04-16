@@ -21,10 +21,37 @@ intervals:
 # (comum em interfaces DPDK/fastpath fp-* em Edge nodes bare-metal).
 # Formato: node_name -> interface_id -> velocidade em Mbps.
 interface_speed_overrides:
-  "tesp3edg1p00011.tesp3infra.local":
-    fp-eth0: 10000   # 10G — ajuste conforme necessário
-    fp-eth1: 10000
+  # Confirmado via SSH "get physical-port" em 2026-04-16
+  # Edges 1-2: Intel XXV710 — 25G
+  "tesp3edg1p00001.tesp3infra.local":
+    fp-eth0: 25000
+    fp-eth2: 25000
+  "tesp3edg1p00002.tesp3infra.local":
+    fp-eth0: 25000
+    fp-eth2: 25000
+  # Edges 4-8: Intel X710 — 10G
+  "tesp3edg1p00004.tesp3infra.local":
+    fp-eth0: 10000
     fp-eth2: 10000
-    fp-eth3: 10000
+  "tesp3edg1p00005.tesp3infra.local":
+    fp-eth0: 10000
+    fp-eth1: 10000
+  "tesp3edg1p00006.tesp3infra.local":
+    fp-eth0: 10000
+    fp-eth1: 10000
+  "tesp3edg1p00007.tesp3infra.local":
+    fp-eth0: 10000
+    fp-eth2: 10000
+  "tesp3edg1p00008.tesp3infra.local":
+    fp-eth0: 10000
+    fp-eth2: 10000
+  # Edges 9-11: Mellanox — 10G (fp-eth2/4 ativas)
+  "tesp3edg1p00009.tesp3infra.local":
+    fp-eth2: 10000
     fp-eth4: 10000
-    fp-eth5: 10000
+  "tesp3edg1p00010.tesp3infra.local":
+    fp-eth2: 10000
+    fp-eth4: 10000
+  "tesp3edg1p00011.tesp3infra.local":
+    fp-eth2: 10000
+    fp-eth4: 10000
