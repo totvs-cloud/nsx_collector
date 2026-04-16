@@ -92,6 +92,19 @@ interface_speed_overrides:
   "tesp2edg1p00002.tesp2infra.local":
     fp-eth0: 25000
     fp-eth2: 25000
+  # TESP4 — todos 25G, confirmado via SSH 2026-04-16
+  "tesp4edg1p00001.tesp4infra.local":
+    fp-eth0: 25000
+    fp-eth2: 25000
+  "tesp4edg1p00002.tesp4infra.local":
+    fp-eth0: 25000
+    fp-eth2: 25000
+  "tesp4edg1p00005.tesp4infra.local":
+    fp-eth2: 25000
+    fp-eth4: 25000
+  "tesp4edg1p00006.tesp4infra.local":
+    fp-eth2: 25000
+    fp-eth4: 25000
   # TESP5 — todos 25G Mellanox, confirmado via SSH 2026-04-16
   "tesp5edg1p00001.tesp5infra.local":
     fp-eth2: 25000
