@@ -1,0 +1,30 @@
+display_information:
+  name: NSX Edge Bandwidth Alert
+  description: Alerta de capacidade de interfaces NSX Edge
+  background_color: "#d32f2f"
+  long_description: |
+    Bot que monitora utilização de bandwidth dos edge nodes NSX.
+    Envia alertas no Slack quando utilização atinge 90% com:
+    - Detalhes do edge node e interface
+    - Porcentagem de erros na interface
+    - Link direto para o dashboard Grafana filtrado
+    - Screenshot do painel de utilização RX do edge
+
+features:
+  bot_user:
+    display_name: NSX Bandwidth Alert
+    always_online: true
+
+oauth_config:
+  scopes:
+    bot:
+      - chat:write
+      - chat:write.customize
+      - files:write
+      - channels:read
+      - groups:read
+
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

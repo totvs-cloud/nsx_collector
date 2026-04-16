@@ -153,7 +153,8 @@ func (w *Worker) Collect(ctx context.Context) {
 							if w.alertEval != nil {
 								w.alertEval.Evaluate(site, nodeName, iface.InterfaceID,
 									rate.RxUtilizationPct, rate.TxUtilizationPct,
-									rate.LinkSpeedMbps, rate.RxBps, rate.TxBps)
+									rate.LinkSpeedMbps, rate.RxBps, rate.TxBps,
+									ifStats.RxErrors, ifStats.TxErrors)
 							}
 						}
 					}

@@ -27,6 +27,10 @@ type SlackConfig struct {
 	Enabled     bool   `yaml:"enabled"`
 	BotTokenEnv string `yaml:"bot_token_env"`
 	Channel     string `yaml:"channel"`
+	GrafanaURL  string `yaml:"grafana_url"`
+	DashboardURL string `yaml:"dashboard_url"`
+	GrafanaKeyEnv string `yaml:"grafana_key_env"`
+	RXUtilPanelID string `yaml:"rx_util_panel_id"`
 }
 
 // InfluxConfig holds InfluxDB connection settings.

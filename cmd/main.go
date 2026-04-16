@@ -67,7 +67,16 @@ func main() {
 		slackToken := os.Getenv(cfg.Slack.BotTokenEnv)
 		if slackToken != "" {
 			slackClient := alerting.NewSlackClient(slackToken, cfg.Slack.Channel)
-			alertEval = alerting.NewEvaluator(slackClient, logger)
+			var grafanaCfg *alerting.GrafanaConfig
+			if cfg.Slack.GrafanaURL != "" {
+				grafanaCfg = &alerting.GrafanaConfig{
+					RenderURL:    cfg.Slack.GrafanaURL,
+					DashboardURL: cfg.Slack.DashboardURL,
+					APIKey:       os.Getenv(cfg.Slack.GrafanaKeyEnv),
+					PanelID:      cfg.Slack.RXUtilPanelID,
+				}
+			}
+			alertEval = alerting.NewEvaluator(slackClient, grafanaCfg, logger)
 			logger.Info("slack alerting enabled", zap.String("channel", cfg.Slack.Channel))
 		} else {
 			logger.Warn("slack alerting disabled: token env var empty", zap.String("env", cfg.Slack.BotTokenEnv))

@@ -2,17 +2,13 @@ package alerting
 
 import (
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
 	"go.uber.org/zap"
-)
-
-type AlertLevel int
-
-const (
-	AlertInfo    AlertLevel = iota
-	AlertWarning
 )
 
 type sample struct {
@@ -21,38 +17,45 @@ type sample struct {
 	ts        time.Time
 }
 
-// Evaluator checks interface utilization against thresholds and posts alerts to Slack.
+type GrafanaConfig struct {
+	RenderURL    string // e.g. http://10.114.35.75:3000
+	DashboardURL string // e.g. http://network-grafana.cloudtotvs.com.br:3000/d/ffjaqhj6lei2ob/nsx-edge-bandwidth
+	APIKey       string
+	PanelID      string // RX Utilization panel ID
+}
+
 type Evaluator struct {
 	slack    *SlackClient
+	grafana  *GrafanaConfig
 	logger   *zap.Logger
 
 	mu       sync.Mutex
-	// cooldown tracks the last alert time per interface to avoid flooding
 	cooldown map[string]time.Time
-	// history stores recent samples for average calculation
 	history  map[string][]sample
 
 	cooldownDuration time.Duration
 	avgWindow        time.Duration
 	avgThreshold     float64
+	warnThreshold    float64
 }
 
-func NewEvaluator(slack *SlackClient, logger *zap.Logger) *Evaluator {
+func NewEvaluator(slack *SlackClient, grafana *GrafanaConfig, logger *zap.Logger) *Evaluator {
 	return &Evaluator{
 		slack:            slack,
+		grafana:          grafana,
 		logger:           logger,
 		cooldown:         make(map[string]time.Time),
 		history:          make(map[string][]sample),
 		cooldownDuration: 15 * time.Minute,
 		avgWindow:        5 * time.Minute,
 		avgThreshold:     80,
+		warnThreshold:    90,
 	}
 }
 
-// Evaluate checks a single interface sample against thresholds.
-// - WARNING (immediate): any direction >= 99%
-// - INFORMATION: 5-minute average above avgThreshold
-func (e *Evaluator) Evaluate(site, nodeName, ifaceID string, rxUtilPct, txUtilPct float64, linkSpeedMbps int64, rxBps, txBps float64) {
+// Evaluate checks utilization and sends alerts.
+// rxErrors/txErrors are cumulative error rates (errors/sec) from the collector.
+func (e *Evaluator) Evaluate(site, nodeName, ifaceID string, rxUtilPct, txUtilPct float64, linkSpeedMbps int64, rxBps, txBps float64, rxErrors, txErrors int64) {
 	key := nodeName + ":" + ifaceID
 	now := time.Now()
 
@@ -70,47 +73,21 @@ func (e *Evaluator) Evaluate(site, nodeName, ifaceID string, rxUtilPct, txUtilPc
 		bps = txBps
 	}
 
-	if maxUtil >= 99 {
-		if e.canAlert(key, now) {
-			msg := formatWarning(site, nodeName, ifaceID, direction, bps, maxUtil, linkSpeedMbps)
-			if err := e.slack.Post(msg); err != nil {
-				e.logger.Error("slack alert failed", zap.Error(err))
-			} else {
-				e.cooldown[key] = now
-				e.logger.Warn("capacity warning sent",
-					zap.String("node", nodeName),
-					zap.String("interface", ifaceID),
-					zap.Float64("util_pct", maxUtil),
-				)
-			}
+	if maxUtil >= e.warnThreshold && e.canAlert(key, now) {
+		msg := e.formatAlert(site, nodeName, ifaceID, direction, bps, maxUtil, linkSpeedMbps, rxErrors, txErrors)
+		ts, err := e.slack.Post(msg)
+		if err != nil {
+			e.logger.Error("slack alert failed", zap.Error(err))
+			return
 		}
-		return
-	}
+		e.cooldown[key] = now
+		e.logger.Warn("capacity alert sent",
+			zap.String("node", nodeName),
+			zap.String("interface", ifaceID),
+			zap.Float64("util_pct", maxUtil),
+		)
 
-	avgRx, avgTx := e.avgUtil(key, now)
-	avgMax := avgRx
-	avgDir := "RX"
-	avgBps := rxBps
-	if avgTx > avgMax {
-		avgMax = avgTx
-		avgDir = "TX"
-		avgBps = txBps
-	}
-
-	if avgMax >= e.avgThreshold {
-		if e.canAlert(key, now) {
-			msg := formatInfo(site, nodeName, ifaceID, avgDir, avgBps, avgMax, linkSpeedMbps)
-			if err := e.slack.Post(msg); err != nil {
-				e.logger.Error("slack info alert failed", zap.Error(err))
-			} else {
-				e.cooldown[key] = now
-				e.logger.Info("capacity info sent",
-					zap.String("node", nodeName),
-					zap.String("interface", ifaceID),
-					zap.Float64("avg_util_pct", avgMax),
-				)
-			}
-		}
+		go e.attachScreenshot(site, nodeName, ts)
 	}
 }
 
@@ -135,18 +112,104 @@ func (e *Evaluator) addSample(key string, rxPct, txPct float64, now time.Time) {
 	}
 }
 
-func (e *Evaluator) avgUtil(key string, now time.Time) (float64, float64) {
-	samples := e.history[key]
-	if len(samples) == 0 {
-		return 0, 0
+func (e *Evaluator) formatAlert(site, nodeName, ifaceID, direction string, bps, utilPct float64, linkSpeedMbps int64, rxErrors, txErrors int64) string {
+	dashLink := e.dashboardLink(nodeName)
+
+	errMsg := "Nenhum"
+	if rxErrors > 0 || txErrors > 0 {
+		errMsg = fmt.Sprintf("RX: %d/s | TX: %d/s", rxErrors, txErrors)
 	}
-	var sumRx, sumTx float64
-	for _, s := range samples {
-		sumRx += s.rxUtilPct
-		sumTx += s.txUtilPct
+
+	icon := ":warning:"
+	level := "WARNING"
+	if utilPct >= 99 {
+		icon = ":red_circle:"
+		level = "CRITICAL"
 	}
-	n := float64(len(samples))
-	return sumRx / n, sumTx / n
+
+	return fmt.Sprintf(
+		"%s *NSX Edge Capacity %s*\n%s\n\n"+
+			"*Edge Node:* `%s`\n"+
+			"*Interface:* `%s`\n"+
+			"*Site:* %s\n\n"+
+			"*%s:* %s / %d Gbps (*%.1f%%*)\n"+
+			"*Link Speed:* %d Mbps\n"+
+			"*Erros:* %s\n\n"+
+			":chart_with_upwards_trend: <%s|Ver no Grafana>",
+		icon, level,
+		time.Now().Format("02/01/2006 15:04:05"),
+		nodeName,
+		ifaceID,
+		site,
+		direction, formatBps(bps), linkSpeedMbps/1000, utilPct,
+		linkSpeedMbps,
+		errMsg,
+		dashLink,
+	)
+}
+
+func (e *Evaluator) dashboardLink(nodeName string) string {
+	if e.grafana == nil || e.grafana.DashboardURL == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s?orgId=1&var-site=All&var-edge_node=%s",
+		e.grafana.DashboardURL,
+		url.QueryEscape(nodeName),
+	)
+}
+
+func (e *Evaluator) attachScreenshot(site, nodeName, threadTS string) {
+	if e.grafana == nil || e.grafana.RenderURL == "" || e.grafana.PanelID == "" {
+		return
+	}
+
+	now := time.Now()
+	from := now.Add(-1 * time.Hour).UnixMilli()
+	to := now.UnixMilli()
+
+	renderURL := fmt.Sprintf(
+		"%s/render/d-solo/ffjaqhj6lei2ob/nsx-edge-bandwidth?orgId=1&panelId=%s&var-site=%s&var-edge_node=%s&width=1000&height=500&from=%d&to=%d",
+		e.grafana.RenderURL,
+		e.grafana.PanelID,
+		url.QueryEscape(site),
+		url.QueryEscape(nodeName),
+		from, to,
+	)
+
+	req, err := http.NewRequest("GET", renderURL, nil)
+	if err != nil {
+		e.logger.Error("grafana render request failed", zap.Error(err))
+		return
+	}
+	if e.grafana.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+e.grafana.APIKey)
+	}
+
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		e.logger.Error("grafana render failed", zap.Error(err))
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		e.logger.Warn("grafana render non-200", zap.Int("status", resp.StatusCode))
+		return
+	}
+
+	img, err := io.ReadAll(resp.Body)
+	if err != nil {
+		e.logger.Error("grafana render read failed", zap.Error(err))
+		return
+	}
+
+	filename := fmt.Sprintf("rx-util-%s-%s.png", nodeName, now.Format("150405"))
+	if err := e.slack.UploadImage(threadTS, filename, "RX Utilization - "+nodeName, img); err != nil {
+		e.logger.Error("slack screenshot upload failed", zap.Error(err))
+	} else {
+		e.logger.Info("screenshot attached to alert", zap.String("node", nodeName))
+	}
 }
 
 func formatBps(bps float64) string {
@@ -160,24 +223,4 @@ func formatBps(bps float64) string {
 	default:
 		return fmt.Sprintf("%.0f bps", bps)
 	}
-}
-
-func formatWarning(site, nodeName, ifaceID, direction string, bps, utilPct float64, linkSpeedMbps int64) string {
-	return fmt.Sprintf(
-		":red_circle: *NSX Edge Capacity WARNING*\n%s\n\n`%s` @ `%s` (%s)\n%s: %s / %d Gbps (*%.1f%%*)\nLink Speed: %d Mbps",
-		time.Now().Format("02/01/2006 15:04:05"),
-		ifaceID, nodeName, site,
-		direction, formatBps(bps), linkSpeedMbps/1000, utilPct,
-		linkSpeedMbps,
-	)
-}
-
-func formatInfo(site, nodeName, ifaceID, direction string, bps, avgUtilPct float64, linkSpeedMbps int64) string {
-	return fmt.Sprintf(
-		":large_blue_circle: *NSX Edge Capacity INFO*\n%s\n\n`%s` @ `%s` (%s)\n%s media 5min: %s / %d Gbps (*%.1f%%*)\nLink Speed: %d Mbps",
-		time.Now().Format("02/01/2006 15:04:05"),
-		ifaceID, nodeName, site,
-		direction, formatBps(bps), linkSpeedMbps/1000, avgUtilPct,
-		linkSpeedMbps,
-	)
 }
