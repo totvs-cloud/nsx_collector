@@ -21,7 +21,7 @@ slack:
   enabled: true
   bot_token_env: "SLACK_BOT_TOKEN"
   channel: "C0ATGN70RRQ"
-  grafana_url: "http://10.114.35.75:3000"
+  grafana_url: "http://network-grafana.cloudtotvs.com.br:3000"
   dashboard_url: "http://network-grafana.cloudtotvs.com.br:3000/d/ffjaqhj6lei2ob/nsx-edge-bandwidth"
   grafana_key_env: "GRAFANA_API_KEY"
   rx_util_panel_id: "5"
