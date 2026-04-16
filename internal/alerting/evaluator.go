@@ -46,10 +46,10 @@ func NewEvaluator(slack *SlackClient, grafana *GrafanaConfig, logger *zap.Logger
 		logger:           logger,
 		cooldown:         make(map[string]time.Time),
 		history:          make(map[string][]sample),
-		cooldownDuration: 0,
+		cooldownDuration: 5 * time.Minute,
 		avgWindow:        5 * time.Minute,
 		avgThreshold:     80,
-		warnThreshold:    10,
+		warnThreshold:    90,
 	}
 }
 
