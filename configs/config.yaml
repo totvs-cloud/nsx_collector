@@ -55,3 +55,28 @@ interface_speed_overrides:
   "tesp3edg1p00011.tesp3infra.local":
     fp-eth2: 10000
     fp-eth4: 10000
+  # TESP6 — todos 25G, confirmado via SSH 2026-04-16
+  "tesp6edg1p00001.tesp6infra.local":
+    fp-eth0: 25000
+    fp-eth2: 25000
+  "tesp6edg1p00002.tesp6infra.local":
+    fp-eth0: 25000
+    fp-eth2: 25000
+  "tesp6edg1p00003.tesp6infra.local":
+    fp-eth0: 25000
+    fp-eth2: 25000
+  "tesp6edg1p00004.tesp6infra.local":
+    fp-eth0: 25000
+    fp-eth2: 25000
+  "tesp6edg1p00005.tesp6infra.local":
+    fp-eth1: 25000
+    fp-eth3: 25000
+  "tesp6edg1p00006.tesp6infra.local":
+    fp-eth1: 25000
+    fp-eth3: 25000
+  "tesp6edg1p00007.tesp6infra.local":
+    fp-eth3: 25000
+    fp-eth5: 25000
+  "tesp6edg1p00008.tesp6infra.local":
+    fp-eth3: 25000
+    fp-eth4: 25000
