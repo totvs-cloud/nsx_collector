@@ -67,14 +67,17 @@ func (rc *RateCalculator) Calculate(nodeName, ifaceID string, rxBytes, txBytes u
 		return nil
 	}
 
+	// NSX API returns rx_bytes/tx_bytes in BITS (not bytes), confirmed via
+	// packet size analysis: counter/packets ≈ 40000 (impossible for bytes, correct for bits).
+	// So the counter rate is already in bits/sec — no *8 conversion needed.
+	rxBps := rxBytesPerSec
+	txBps := txBytesPerSec
+
 	// Sanity check: discard if rate exceeds 100 Gbps (likely counter reset)
-	const maxBytesPerSec = 100_000_000_000 / 8
-	if rxBytesPerSec > maxBytesPerSec || txBytesPerSec > maxBytesPerSec {
+	const maxBps = 100_000_000_000.0
+	if rxBps > maxBps || txBps > maxBps {
 		return nil
 	}
-
-	rxBps := rxBytesPerSec * 8
-	txBps := txBytesPerSec * 8
 
 	result := &RateResult{
 		RxBps:         rxBps,
