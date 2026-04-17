@@ -67,17 +67,14 @@ func (rc *RateCalculator) Calculate(nodeName, ifaceID string, rxBytes, txBytes u
 		return nil
 	}
 
-	// NSX API returns rx_bytes/tx_bytes in BITS (not bytes), confirmed via
-	// packet size analysis: counter/packets ≈ 40000 (impossible for bytes, correct for bits).
-	// So the counter rate is already in bits/sec — no *8 conversion needed.
-	rxBps := rxBytesPerSec
-	txBps := txBytesPerSec
-
 	// Sanity check: discard if rate exceeds 100 Gbps (likely counter reset)
-	const maxBps = 100_000_000_000.0
-	if rxBps > maxBps || txBps > maxBps {
+	const maxBytesPerSec = 100_000_000_000 / 8
+	if rxBytesPerSec > maxBytesPerSec || txBytesPerSec > maxBytesPerSec {
 		return nil
 	}
+
+	rxBps := rxBytesPerSec * 8
+	txBps := txBytesPerSec * 8
 
 	result := &RateResult{
 		RxBps:         rxBps,
@@ -91,14 +88,14 @@ func (rc *RateCalculator) Calculate(nodeName, ifaceID string, rxBytes, txBytes u
 		result.TxUtilizationPct = min((txBps/linkBps)*100, 100)
 	}
 
-	if result.RxUtilizationPct > 50 || result.TxUtilizationPct > 50 {
+	if result.RxUtilizationPct > 30 || result.TxUtilizationPct > 30 {
 		zap.L().Warn("rate debug",
 			zap.String("key", nodeName+":"+ifaceID),
-			zap.Uint64("prev_rx", prevRx.value),
-			zap.Uint64("curr_rx", rxBytes),
-			zap.Uint64("prev_tx", prevTx.value),
-			zap.Uint64("curr_tx", txBytes),
+			zap.Uint64("delta_rx", rxBytes-prevRx.value),
+			zap.Uint64("delta_tx", txBytes-prevTx.value),
 			zap.Float64("elapsed_sec", elapsed),
+			zap.Float64("rx_bytes_sec", rxBytesPerSec),
+			zap.Float64("tx_bytes_sec", txBytesPerSec),
 			zap.Float64("rx_bps", rxBps),
 			zap.Float64("tx_bps", txBps),
 			zap.Float64("rx_util", result.RxUtilizationPct),
