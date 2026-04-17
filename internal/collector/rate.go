@@ -82,8 +82,8 @@ func (rc *RateCalculator) Calculate(nodeName, ifaceID string, rxBytes, txBytes u
 
 	if linkSpeedMbps > 0 {
 		linkBps := float64(linkSpeedMbps) * 1_000_000
-		result.RxUtilizationPct = (rxBps / linkBps) * 100
-		result.TxUtilizationPct = (txBps / linkBps) * 100
+		result.RxUtilizationPct = min((rxBps/linkBps)*100, 100)
+		result.TxUtilizationPct = min((txBps/linkBps)*100, 100)
 	}
 
 	return result
