@@ -143,12 +143,13 @@ func (w *Worker) Collect(ctx context.Context) {
 						}
 						points = append(points, influxpkg.EdgeUplinkStatsPoint(site, nodeID, nodeName, &ifaceResolved, ifStats, now))
 
-						if rate := w.rateCalc.Calculate(nodeName, iface.InterfaceID, uint64(ifStats.RxBytes), uint64(ifStats.TxBytes), ifaceResolved.LinkSpeed, now); rate != nil {
+						statsTime := time.Now()
+						if rate := w.rateCalc.Calculate(nodeName, iface.InterfaceID, uint64(ifStats.RxBytes), uint64(ifStats.TxBytes), ifaceResolved.LinkSpeed, statsTime); rate != nil {
 							points = append(points, influxpkg.EdgeUplinkRatePoint(
 								site, nodeID, nodeName, iface.InterfaceID,
 								rate.RxBps, rate.TxBps,
 								rate.RxUtilizationPct, rate.TxUtilizationPct,
-								rate.LinkSpeedMbps, now,
+								rate.LinkSpeedMbps, statsTime,
 							))
 							if w.alertEval != nil {
 								w.alertEval.Evaluate(site, nodeName, iface.InterfaceID,
