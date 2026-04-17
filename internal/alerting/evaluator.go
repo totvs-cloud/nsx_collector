@@ -64,11 +64,16 @@ func (e *Evaluator) Evaluate(site, nodeName, ifaceID string, rxUtilPct, txUtilPc
 
 	e.addSample(key, rxUtilPct, txUtilPct, now)
 
-	maxUtil := rxUtilPct
+	// Use average utilization over the window instead of instantaneous value.
+	// This matches Grafana's aggregateWindow(fn: mean) and avoids false alerts
+	// from short bursts that disappear in the averaged view.
+	avgRx, avgTx := e.avgUtil(key)
+
+	maxUtil := avgRx
 	direction := "RX"
 	bps := rxBps
-	if txUtilPct > maxUtil {
-		maxUtil = txUtilPct
+	if avgTx > maxUtil {
+		maxUtil = avgTx
 		direction = "TX"
 		bps = txBps
 	}
@@ -110,6 +115,21 @@ func (e *Evaluator) addSample(key string, rxPct, txPct float64, now time.Time) {
 	if i > 0 {
 		e.history[key] = samples[i:]
 	}
+}
+
+// avgUtil returns the mean RX and TX utilization over the stored samples for key.
+func (e *Evaluator) avgUtil(key string) (float64, float64) {
+	samples := e.history[key]
+	if len(samples) == 0 {
+		return 0, 0
+	}
+	var sumRx, sumTx float64
+	for _, s := range samples {
+		sumRx += s.rxUtilPct
+		sumTx += s.txUtilPct
+	}
+	n := float64(len(samples))
+	return sumRx / n, sumTx / n
 }
 
 func (e *Evaluator) formatAlert(site, nodeName, ifaceID, direction string, bps, utilPct float64, linkSpeedMbps int64, rxErrors, txErrors int64) string {
