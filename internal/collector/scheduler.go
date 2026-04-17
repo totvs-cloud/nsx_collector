@@ -33,15 +33,15 @@ func (s *Scheduler) Start(ctx context.Context) error {
 	// Run one cycle immediately on startup
 	s.runAll(ctx)
 
-	ticker := time.NewTicker(s.interval)
-	defer ticker.Stop()
-
 	for {
+		// Create a fresh timer after each cycle to avoid accumulated ticks
+		timer := time.NewTimer(s.interval)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			s.logger.Info("scheduler shutting down")
 			return nil
-		case <-ticker.C:
+		case <-timer.C:
 			s.runAll(ctx)
 		}
 	}

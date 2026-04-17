@@ -56,7 +56,7 @@ func (rc *RateCalculator) Calculate(nodeName, ifaceID string, rxBytes, txBytes u
 	}
 
 	elapsed := now.Sub(prevRx.ts).Seconds()
-	if elapsed <= 0 {
+	if elapsed < 10 {
 		return nil
 	}
 
