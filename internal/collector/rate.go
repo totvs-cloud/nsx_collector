@@ -3,6 +3,8 @@ package collector
 import (
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 type counterState struct {
@@ -84,6 +86,22 @@ func (rc *RateCalculator) Calculate(nodeName, ifaceID string, rxBytes, txBytes u
 		linkBps := float64(linkSpeedMbps) * 1_000_000
 		result.RxUtilizationPct = min((rxBps/linkBps)*100, 100)
 		result.TxUtilizationPct = min((txBps/linkBps)*100, 100)
+	}
+
+	if result.RxUtilizationPct > 50 || result.TxUtilizationPct > 50 {
+		zap.L().Warn("rate debug",
+			zap.String("key", nodeName+":"+ifaceID),
+			zap.Uint64("prev_rx", prevRx.value),
+			zap.Uint64("curr_rx", rxBytes),
+			zap.Uint64("prev_tx", prevTx.value),
+			zap.Uint64("curr_tx", txBytes),
+			zap.Float64("elapsed_sec", elapsed),
+			zap.Float64("rx_bps", rxBps),
+			zap.Float64("tx_bps", txBps),
+			zap.Float64("rx_util", result.RxUtilizationPct),
+			zap.Float64("tx_util", result.TxUtilizationPct),
+			zap.Int64("link_speed_mbps", linkSpeedMbps),
+		)
 	}
 
 	return result
