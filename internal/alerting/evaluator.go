@@ -52,9 +52,10 @@ func NewEvaluator(slack *SlackClient, grafana *GrafanaConfig, reader utilReader,
 		logger:           logger,
 		cooldown:         make(map[string]time.Time),
 		cooldownDuration: 3 * time.Minute,
-		// 15-minute window avoids alerting on brief bursts that also show as
-		// thin spikes in Grafana but aren't sustained saturation.
-		avgWindow:     "15m",
+		// 10-minute window: saturação precisa estar sustentada por ~10min
+		// pra alertar. Pega problema real rápido e ignora bursts curtos
+		// que apareciam como picos finos no Grafana.
+		avgWindow:     "10m",
 		warnThreshold: 90,
 	}
 }
