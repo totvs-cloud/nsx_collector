@@ -25,6 +25,7 @@ slack:
   dashboard_url: "http://network-grafana.cloudtotvs.com.br:3000/d/ffjaqhj6lei2ob/nsx-edge-bandwidth"
   grafana_key_env: "GRAFANA_API_KEY"
   rx_util_panel_id: "5"
+  tx_util_panel_id: "6"  # ajustar para o panelId real do painel TX Utilization
 
 # Overrides de velocidade para interfaces onde a API NSX retorna link_speed = 0
 # (comum em interfaces DPDK/fastpath fp-* em Edge nodes bare-metal).

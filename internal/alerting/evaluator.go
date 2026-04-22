@@ -21,7 +21,8 @@ type GrafanaConfig struct {
 	RenderURL    string // e.g. http://10.114.35.75:3000
 	DashboardURL string // e.g. http://network-grafana.cloudtotvs.com.br:3000/d/ffjaqhj6lei2ob/nsx-edge-bandwidth
 	APIKey       string
-	PanelID      string // RX Utilization panel ID
+	RxPanelID    string // RX Utilization panel ID
+	TxPanelID    string // TX Utilization panel ID
 }
 
 type Evaluator struct {
@@ -37,6 +38,7 @@ type Evaluator struct {
 	avgWindow        time.Duration
 	avgThreshold     float64
 	warnThreshold    float64
+	minSamples       int
 }
 
 func NewEvaluator(slack *SlackClient, grafana *GrafanaConfig, logger *zap.Logger) *Evaluator {
@@ -50,6 +52,9 @@ func NewEvaluator(slack *SlackClient, grafana *GrafanaConfig, logger *zap.Logger
 		avgWindow:        5 * time.Minute,
 		avgThreshold:     80,
 		warnThreshold:    90,
+		// Require at least 3 samples (~2 minutes at 40s polling) before
+		// alerting, so a single-cycle burst cannot trip the average.
+		minSamples: 3,
 	}
 }
 
@@ -63,6 +68,11 @@ func (e *Evaluator) Evaluate(site, nodeName, ifaceID string, rxUtilPct, txUtilPc
 	defer e.mu.Unlock()
 
 	e.addSample(key, rxUtilPct, txUtilPct, now)
+
+	// Need enough samples in the window to avoid alerting on a single burst.
+	if len(e.history[key]) < e.minSamples {
+		return
+	}
 
 	// Use average utilization over the window instead of instantaneous value.
 	// This matches Grafana's aggregateWindow(fn: mean) and avoids false alerts
@@ -92,7 +102,7 @@ func (e *Evaluator) Evaluate(site, nodeName, ifaceID string, rxUtilPct, txUtilPc
 			zap.Float64("util_pct", maxUtil),
 		)
 
-		go e.attachScreenshot(site, nodeName, ts)
+		go e.attachScreenshot(site, nodeName, direction, ts)
 	}
 }
 
@@ -178,8 +188,18 @@ func (e *Evaluator) dashboardLink(nodeName string) string {
 	)
 }
 
-func (e *Evaluator) attachScreenshot(site, nodeName, threadTS string) {
-	if e.grafana == nil || e.grafana.RenderURL == "" || e.grafana.PanelID == "" {
+func (e *Evaluator) attachScreenshot(site, nodeName, direction, threadTS string) {
+	if e.grafana == nil || e.grafana.RenderURL == "" {
+		return
+	}
+
+	// Select panel matching the saturating direction so the screenshot
+	// corresponds to the alert (RX alert → RX graph, TX alert → TX graph).
+	panelID := e.grafana.RxPanelID
+	if direction == "TX" && e.grafana.TxPanelID != "" {
+		panelID = e.grafana.TxPanelID
+	}
+	if panelID == "" {
 		return
 	}
 
@@ -190,7 +210,7 @@ func (e *Evaluator) attachScreenshot(site, nodeName, threadTS string) {
 	renderURL := fmt.Sprintf(
 		"%s/render/d-solo/ffjaqhj6lei2ob/nsx-edge-bandwidth?orgId=1&panelId=%s&var-site=%s&var-edge_node=%s&width=1000&height=500&from=%d&to=%d",
 		e.grafana.RenderURL,
-		e.grafana.PanelID,
+		panelID,
 		url.QueryEscape(site),
 		url.QueryEscape(nodeName),
 		from, to,
@@ -224,8 +244,8 @@ func (e *Evaluator) attachScreenshot(site, nodeName, threadTS string) {
 		return
 	}
 
-	filename := fmt.Sprintf("rx-util-%s-%s.png", nodeName, now.Format("150405"))
-	if err := e.slack.UploadImage(threadTS, filename, "RX Utilization - "+nodeName, img); err != nil {
+	filename := fmt.Sprintf("%s-util-%s-%s.png", direction, nodeName, now.Format("150405"))
+	if err := e.slack.UploadImage(threadTS, filename, direction+" Utilization - "+nodeName, img); err != nil {
 		e.logger.Error("slack screenshot upload failed", zap.Error(err))
 	} else {
 		e.logger.Info("screenshot attached to alert", zap.String("node", nodeName))

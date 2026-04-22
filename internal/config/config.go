@@ -31,6 +31,7 @@ type SlackConfig struct {
 	DashboardURL string `yaml:"dashboard_url"`
 	GrafanaKeyEnv string `yaml:"grafana_key_env"`
 	RXUtilPanelID string `yaml:"rx_util_panel_id"`
+	TXUtilPanelID string `yaml:"tx_util_panel_id"`
 }
 
 // InfluxConfig holds InfluxDB connection settings.

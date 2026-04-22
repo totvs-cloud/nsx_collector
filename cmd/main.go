@@ -73,7 +73,8 @@ func main() {
 					RenderURL:    cfg.Slack.GrafanaURL,
 					DashboardURL: cfg.Slack.DashboardURL,
 					APIKey:       os.Getenv(cfg.Slack.GrafanaKeyEnv),
-					PanelID:      cfg.Slack.RXUtilPanelID,
+					RxPanelID:    cfg.Slack.RXUtilPanelID,
+					TxPanelID:    cfg.Slack.TXUtilPanelID,
 				}
 			}
 			alertEval = alerting.NewEvaluator(slackClient, grafanaCfg, logger)
