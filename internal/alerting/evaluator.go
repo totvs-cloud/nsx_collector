@@ -1,6 +1,7 @@
 package alerting
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,10 +12,11 @@ import (
 	"go.uber.org/zap"
 )
 
-type sample struct {
-	rxUtilPct float64
-	txUtilPct float64
-	ts        time.Time
+// utilReader queries InfluxDB for the already-aggregated RX/TX utilization
+// used by the Grafana panels, so the alert evaluates the exact same numbers
+// the dashboard shows.
+type utilReader interface {
+	EdgeUtilAvg(ctx context.Context, site, nodeName, ifaceID, window string) (float64, float64, error)
 }
 
 type GrafanaConfig struct {
@@ -26,58 +28,71 @@ type GrafanaConfig struct {
 }
 
 type Evaluator struct {
-	slack    *SlackClient
-	grafana  *GrafanaConfig
-	logger   *zap.Logger
+	slack   *SlackClient
+	grafana *GrafanaConfig
+	reader  utilReader
+	logger  *zap.Logger
 
 	mu       sync.Mutex
 	cooldown map[string]time.Time
-	history  map[string][]sample
 
 	cooldownDuration time.Duration
-	avgWindow        time.Duration
-	avgThreshold     float64
+	avgWindow        string  // Flux window literal, e.g. "15m"
 	warnThreshold    float64
-	minSamples       int
 }
 
-func NewEvaluator(slack *SlackClient, grafana *GrafanaConfig, logger *zap.Logger) *Evaluator {
+// NewEvaluator builds an evaluator. The reader is mandatory: without it the
+// alert cannot mirror Grafana's aggregated values and would fall back to
+// instantaneous samples (the bug this package used to have).
+func NewEvaluator(slack *SlackClient, grafana *GrafanaConfig, reader utilReader, logger *zap.Logger) *Evaluator {
 	return &Evaluator{
 		slack:            slack,
 		grafana:          grafana,
+		reader:           reader,
 		logger:           logger,
 		cooldown:         make(map[string]time.Time),
-		history:          make(map[string][]sample),
 		cooldownDuration: 3 * time.Minute,
-		avgWindow:        5 * time.Minute,
-		avgThreshold:     80,
-		warnThreshold:    90,
-		// Require at least 3 samples (~2 minutes at 40s polling) before
-		// alerting, so a single-cycle burst cannot trip the average.
-		minSamples: 3,
+		// 15-minute window avoids alerting on brief bursts that also show as
+		// thin spikes in Grafana but aren't sustained saturation.
+		avgWindow:     "15m",
+		warnThreshold: 90,
 	}
 }
 
 // Evaluate checks utilization and sends alerts.
+// Instead of using the instantaneous rate just computed by the collector,
+// it queries InfluxDB with the same aggregation Grafana uses, so the alert
+// fires on the exact value the dashboard displays.
 // rxErrors/txErrors are cumulative error rates (errors/sec) from the collector.
 func (e *Evaluator) Evaluate(site, nodeName, ifaceID string, rxUtilPct, txUtilPct float64, linkSpeedMbps int64, rxBps, txBps float64, rxErrors, txErrors int64) {
+	if e.reader == nil {
+		// Without a reader we refuse to alert on raw/instantaneous samples;
+		// that mode caused all the false positives this package used to have.
+		return
+	}
+
 	key := nodeName + ":" + ifaceID
 	now := time.Now()
 
 	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	e.addSample(key, rxUtilPct, txUtilPct, now)
-
-	// Need enough samples in the window to avoid alerting on a single burst.
-	if len(e.history[key]) < e.minSamples {
+	if !e.canAlert(key, now) {
+		e.mu.Unlock()
 		return
 	}
+	e.mu.Unlock()
 
-	// Use average utilization over the window instead of instantaneous value.
-	// This matches Grafana's aggregateWindow(fn: mean) and avoids false alerts
-	// from short bursts that disappear in the averaged view.
-	avgRx, avgTx := e.avgUtil(key)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	avgRx, avgTx, err := e.reader.EdgeUtilAvg(ctx, site, nodeName, ifaceID, e.avgWindow)
+	if err != nil {
+		e.logger.Warn("grafana aggregated query failed",
+			zap.String("node", nodeName),
+			zap.String("interface", ifaceID),
+			zap.Error(err),
+		)
+		return
+	}
 
 	maxUtil := avgRx
 	direction := "RX"
@@ -88,22 +103,35 @@ func (e *Evaluator) Evaluate(site, nodeName, ifaceID string, rxUtilPct, txUtilPc
 		bps = txBps
 	}
 
-	if maxUtil >= e.warnThreshold && e.canAlert(key, now) {
-		msg := e.formatAlert(site, nodeName, ifaceID, direction, bps, maxUtil, linkSpeedMbps, rxErrors, txErrors)
-		ts, err := e.slack.Post(msg)
-		if err != nil {
-			e.logger.Error("slack alert failed", zap.Error(err))
-			return
-		}
-		e.cooldown[key] = now
-		e.logger.Warn("capacity alert sent",
-			zap.String("node", nodeName),
-			zap.String("interface", ifaceID),
-			zap.Float64("util_pct", maxUtil),
-		)
-
-		go e.attachScreenshot(site, nodeName, direction, ts)
+	if maxUtil < e.warnThreshold {
+		return
 	}
+
+	e.mu.Lock()
+	// Re-check cooldown after the async query: another goroutine may have
+	// fired an alert for the same key while we were waiting on InfluxDB.
+	if !e.canAlert(key, now) {
+		e.mu.Unlock()
+		return
+	}
+	e.cooldown[key] = now
+	e.mu.Unlock()
+
+	msg := e.formatAlert(site, nodeName, ifaceID, direction, bps, maxUtil, linkSpeedMbps, rxErrors, txErrors)
+	ts, err := e.slack.Post(msg)
+	if err != nil {
+		e.logger.Error("slack alert failed", zap.Error(err))
+		return
+	}
+	e.logger.Warn("capacity alert sent",
+		zap.String("node", nodeName),
+		zap.String("interface", ifaceID),
+		zap.String("direction", direction),
+		zap.Float64("util_pct", maxUtil),
+		zap.String("window", e.avgWindow),
+	)
+
+	go e.attachScreenshot(site, nodeName, direction, ts)
 }
 
 func (e *Evaluator) canAlert(key string, now time.Time) bool {
@@ -112,34 +140,6 @@ func (e *Evaluator) canAlert(key string, now time.Time) bool {
 		return true
 	}
 	return now.Sub(last) >= e.cooldownDuration
-}
-
-func (e *Evaluator) addSample(key string, rxPct, txPct float64, now time.Time) {
-	e.history[key] = append(e.history[key], sample{rxUtilPct: rxPct, txUtilPct: txPct, ts: now})
-	cutoff := now.Add(-e.avgWindow)
-	samples := e.history[key]
-	i := 0
-	for i < len(samples) && samples[i].ts.Before(cutoff) {
-		i++
-	}
-	if i > 0 {
-		e.history[key] = samples[i:]
-	}
-}
-
-// avgUtil returns the mean RX and TX utilization over the stored samples for key.
-func (e *Evaluator) avgUtil(key string) (float64, float64) {
-	samples := e.history[key]
-	if len(samples) == 0 {
-		return 0, 0
-	}
-	var sumRx, sumTx float64
-	for _, s := range samples {
-		sumRx += s.rxUtilPct
-		sumTx += s.txUtilPct
-	}
-	n := float64(len(samples))
-	return sumRx / n, sumTx / n
 }
 
 func (e *Evaluator) formatAlert(site, nodeName, ifaceID, direction string, bps, utilPct float64, linkSpeedMbps int64, rxErrors, txErrors int64) string {

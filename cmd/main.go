@@ -60,6 +60,7 @@ func main() {
 	defer influxClient.Close()
 
 	writer := influxpkg.NewWriter(influxClient, cfg.InfluxDB.Org, cfg.InfluxDB.Bucket, cfg.InfluxDB.CapacityBucket)
+	reader := influxpkg.NewReader(influxClient, cfg.InfluxDB.Org, cfg.InfluxDB.Bucket)
 
 	// Build alert evaluator (nil if Slack not configured)
 	var alertEval *alerting.Evaluator
@@ -77,7 +78,7 @@ func main() {
 					TxPanelID:    cfg.Slack.TXUtilPanelID,
 				}
 			}
-			alertEval = alerting.NewEvaluator(slackClient, grafanaCfg, logger)
+			alertEval = alerting.NewEvaluator(slackClient, grafanaCfg, reader, logger)
 			logger.Info("slack alerting enabled", zap.String("channel", cfg.Slack.Channel))
 		} else {
 			logger.Warn("slack alerting disabled: token env var empty", zap.String("env", cfg.Slack.BotTokenEnv))
