@@ -77,6 +77,14 @@ func (w *Worker) Collect(ctx context.Context) {
 		points = append(points, influxpkg.ClusterStatusPoint(site, cs, now))
 	}
 
+	// 1b. Local Manager appliance status (uptime).
+	if ns, err := w.client.GetNodeStatus(ctx); err != nil {
+		logger.Warn("manager node status failed", zap.Error(err))
+		telemetry.CollectErrors.WithLabelValues(site, "manager_status").Inc()
+	} else {
+		points = append(points, influxpkg.ManagerStatusPoint(site, ns, now))
+	}
+
 	// 2. Transport nodes — list all, then fetch status for each
 	nodes, err := w.client.GetTransportNodes(ctx)
 	if err != nil {
@@ -255,6 +263,15 @@ func (w *Worker) Collect(ctx context.Context) {
 			}
 
 			for i := range lbServices {
+				if i > 0 {
+					// Pace requests so the NSX Manager doesn't rate-limit (429)
+					// when sites have hundreds of LB services.
+					select {
+					case <-ctx.Done():
+						return
+					case <-time.After(50 * time.Millisecond):
+					}
+				}
 				svc := &lbServices[i]
 				status, err := w.client.GetLBServiceStatus(ctx, svc.ID)
 				if err != nil {

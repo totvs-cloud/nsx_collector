@@ -2,6 +2,15 @@ package nsx
 
 import "encoding/json"
 
+// NodeStatus represents GET /api/v1/node/status — local appliance status of
+// the NSX Manager that answered the request. Used to expose manager uptime.
+type NodeStatus struct {
+	SystemStatus struct {
+		Uptime int64 `json:"uptime"` // milliseconds since last reboot
+	} `json:"system_status"`
+	Version string `json:"version"`
+}
+
 // ClusterStatus represents GET /api/v1/cluster/status
 type ClusterStatus struct {
 	ClusterID         string `json:"cluster_id"`
