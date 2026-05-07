@@ -38,7 +38,7 @@ func ManagerStatusPoint(site, managerID, managerIP string, ns *nsx.NodeStatus, n
 			"manager_ip": managerIP,
 		},
 		map[string]interface{}{
-			"uptime_ms": ns.Uptime,
+			"uptime_ms": ns.SystemStatus.Uptime,
 		},
 		now,
 	)

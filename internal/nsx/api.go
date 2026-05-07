@@ -5,16 +5,6 @@ import (
 	"fmt"
 )
 
-// GetNodeStatus returns the local appliance status (uptime, version) of the NSX
-// Manager handling the request.
-func (c *Client) GetNodeStatus(ctx context.Context) (*NodeStatus, error) {
-	var result NodeStatus
-	if err := c.doGet(ctx, "/api/v1/node/status", &result); err != nil {
-		return nil, fmt.Errorf("node status: %w", err)
-	}
-	return &result, nil
-}
-
 // GetClusterNodeStatus returns the appliance status of a specific cluster node
 // via /api/v1/cluster/nodes/<id>/status (the request is proxied to that node by
 // the Manager that fronts the VIP), so we can collect uptime per Manager.
