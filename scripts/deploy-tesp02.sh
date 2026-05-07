@@ -56,6 +56,7 @@ influxdb:
   url: "${INFLUX_URL}"
   org: "TOTVS"
   bucket: "nsx"
+  capacity_bucket: "nsx_capacity"
 
 logging:
   level: "info"

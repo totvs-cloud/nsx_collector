@@ -19,6 +19,7 @@ influxdb:
   url: "http://10.114.35.75:8086"
   org: "TOTVS"
   bucket: "nsx"
+  capacity_bucket: "nsx_capacity"
 
 logging:
   level: "info"
