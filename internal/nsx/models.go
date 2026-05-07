@@ -4,11 +4,10 @@ import "encoding/json"
 
 // NodeStatus represents GET /api/v1/node/status — local appliance status of
 // the NSX Manager that answered the request. Used to expose manager uptime.
+// NSX-T returns NodeStatusProperties with fields at the root level (no
+// system_status wrapper, contrary to transport-node status).
 type NodeStatus struct {
-	SystemStatus struct {
-		Uptime int64 `json:"uptime"` // milliseconds since last reboot
-	} `json:"system_status"`
-	Version string `json:"version"`
+	Uptime int64 `json:"uptime"` // milliseconds since last reboot
 }
 
 // ClusterStatus represents GET /api/v1/cluster/status

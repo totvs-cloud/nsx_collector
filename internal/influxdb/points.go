@@ -23,22 +23,17 @@ func boolInt(b bool) int64 {
 	return 0
 }
 
-// ManagerStatusPoint writes the local NSX Manager appliance status: uptime and
-// version. Only one Manager answers a given collection cycle (the one fronting
-// the cluster VIP), so we tag with site only — no node identifier is needed.
+// ManagerStatusPoint writes the local NSX Manager appliance uptime. Only one
+// Manager answers a given collection cycle (the one fronting the cluster VIP),
+// so we tag with site only — no node identifier is needed.
 func ManagerStatusPoint(site string, ns *nsx.NodeStatus, now time.Time) *write.Point {
-	version := ns.Version
-	if version == "" {
-		version = "-"
-	}
 	return influxdb2.NewPoint(
 		"nsx_manager",
 		map[string]string{
-			"site":    site,
-			"version": version,
+			"site": site,
 		},
 		map[string]interface{}{
-			"uptime_ms": ns.SystemStatus.Uptime,
+			"uptime_ms": ns.Uptime,
 		},
 		now,
 	)
