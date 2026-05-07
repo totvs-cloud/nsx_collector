@@ -15,6 +15,17 @@ func (c *Client) GetNodeStatus(ctx context.Context) (*NodeStatus, error) {
 	return &result, nil
 }
 
+// GetClusterNodeStatus returns the appliance status of a specific cluster node
+// via /api/v1/cluster/nodes/<id>/status (the request is proxied to that node by
+// the Manager that fronts the VIP), so we can collect uptime per Manager.
+func (c *Client) GetClusterNodeStatus(ctx context.Context, nodeID string) (*NodeStatus, error) {
+	var result NodeStatus
+	if err := c.doGet(ctx, "/api/v1/cluster/nodes/"+nodeID+"/status", &result); err != nil {
+		return nil, fmt.Errorf("cluster node %s status: %w", nodeID, err)
+	}
+	return &result, nil
+}
+
 // GetClusterStatus returns the overall NSX cluster status.
 func (c *Client) GetClusterStatus(ctx context.Context) (*ClusterStatus, error) {
 	var result ClusterStatus

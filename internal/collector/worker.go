@@ -70,19 +70,29 @@ func (w *Worker) Collect(ctx context.Context) {
 	}
 
 	// 1. Cluster status
-	if cs, err := w.client.GetClusterStatus(ctx); err != nil {
+	cs, err := w.client.GetClusterStatus(ctx)
+	if err != nil {
 		logger.Warn("cluster status failed", zap.Error(err))
 		telemetry.CollectErrors.WithLabelValues(site, "cluster").Inc()
 	} else {
 		points = append(points, influxpkg.ClusterStatusPoint(site, cs, now))
 	}
 
-	// 1b. Local Manager appliance status (uptime).
-	if ns, err := w.client.GetNodeStatus(ctx); err != nil {
-		logger.Warn("manager node status failed", zap.Error(err))
-		telemetry.CollectErrors.WithLabelValues(site, "manager_status").Inc()
-	} else {
-		points = append(points, influxpkg.ManagerStatusPoint(site, ns, now))
+	// 1b. Uptime de cada Manager do cluster — itera sobre os nós online
+	// retornados em /cluster/status e busca /cluster/nodes/<id>/status.
+	if cs != nil {
+		for _, n := range cs.MgmtClusterStatus.OnlineNodes {
+			ns, err := w.client.GetClusterNodeStatus(ctx, n.UUID)
+			if err != nil {
+				logger.Warn("manager node status failed",
+					zap.String("node", n.UUID),
+					zap.Error(err),
+				)
+				telemetry.CollectErrors.WithLabelValues(site, "manager_status").Inc()
+				continue
+			}
+			points = append(points, influxpkg.ManagerStatusPoint(site, n.UUID, n.MgmtClusterListenIPAddress, ns, now))
+		}
 	}
 
 	// 2. Transport nodes — list all, then fetch status for each
