@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Instalacao do nsx-collector na VM do TESP7.
-# Rodar direto na VM: sudo bash deploy-tesp07.sh
+# Instalacao do nsx-collector na VM do TECE.
+# Rodar direto na VM: sudo bash deploy-tece.sh
 set -euo pipefail
 
 REPO_URL="git@github.com:totvs-cloud/nsx_collector.git"
 INSTALL_DIR="/home/nsx_collector"
 GO_VERSION="1.23.6"
 
-SITE_NAME="TESP7"
-NSX_URL="https://tesp7nsx2p00001.tesp7infra.local"
+SITE_NAME="TECE"
+NSX_URL="https://172.18.214.31"
 NSX_USER="admin"
-NSX_PASS='Adm!n@Nsx3#Lr8$wq'
+NSX_PASS='$hak@d3V!rg&m'
 INFLUX_URL="http://10.114.35.75:8086"
 INFLUX_TOKEN="FLKJPw-nIgGobRHwhGH2KGVRaoYRvWiMqBuzLqZa8I_La1q2K7Nz_ruSvX1m0wMSW0eFlFo1KpMYer1T6NAz7A=="
 
