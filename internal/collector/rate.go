@@ -63,6 +63,14 @@ func (rc *RateCalculator) Calculate(nodeName, ifaceID string, rxBytes, txBytes u
 	rxBytesPerSec := counterRate(prevRx.value, rxBytes, elapsed)
 	txBytesPerSec := counterRate(prevTx.value, txBytes, elapsed)
 
+	// Stale read: NSX Manager occasionally returns the same counter twice
+	// in a row (internal cache). On a link with known speed and >30s window,
+	// rx=tx=0 is physically improbable — discard the sample instead of
+	// writing a 0-dip into nsx_edge_bandwidth.
+	if rxBytesPerSec == 0 && txBytesPerSec == 0 && elapsed > 30 && linkSpeedMbps > 0 {
+		return nil
+	}
+
 	if rxBytesPerSec < 0 || txBytesPerSec < 0 {
 		return nil
 	}
