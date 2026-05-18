@@ -11,11 +11,20 @@ SITE_NAME="TESP7"
 NSX_URL="https://tesp7nsx2p00001.tesp7infra.local"
 NSX_USER="admin"
 NSX_PASS='Adm!n@Nsx3#Lr8$wq'
+
+SITE_NAME_INFRABASE="TESP7-INFRABASE"
+NSX_URL_INFRABASE="https://tesp7nsx1p00001.tesp7infra.local"
+NSX_USER_INFRABASE="admin"
+NSX_PASS_INFRABASE='Adm!n@Nsx3#Lr8$wq'
+
 INFLUX_URL="http://10.114.35.75:8086"
 INFLUX_TOKEN="FLKJPw-nIgGobRHwhGH2KGVRaoYRvWiMqBuzLqZa8I_La1q2K7Nz_ruSvX1m0wMSW0eFlFo1KpMYer1T6NAz7A=="
 
 SITE_ENV="NSX_${SITE_NAME}_USER"
 SITE_ENV_PASS="NSX_${SITE_NAME}_PASS"
+
+SITE_ENV_INFRABASE="NSX_TESP7_INFRABASE_USER"
+SITE_ENV_PASS_INFRABASE="NSX_TESP7_INFRABASE_PASS"
 
 # ── 1. Instalar Go se nao existir ────────────────────────────────────────────
 if ! command -v go &>/dev/null && [ ! -x /usr/local/go/bin/go ]; then
@@ -44,7 +53,8 @@ echo "    OK"
 # ── 4. Instalar binario e configs ────────────────────────────────────────────
 echo "==> Instalando em ${INSTALL_DIR}..."
 mkdir -p "${INSTALL_DIR}/configs"
-cp /tmp/nsx-collector "${INSTALL_DIR}/nsx-collector"
+systemctl stop nsx-collector 2>/dev/null || true
+mv -f /tmp/nsx-collector "${INSTALL_DIR}/nsx-collector"
 chmod +x "${INSTALL_DIR}/nsx-collector"
 
 cat > "${INSTALL_DIR}/configs/config.yaml" <<EOF
@@ -75,12 +85,20 @@ managers:
     password_env: "${SITE_ENV_PASS}"
     tls_skip_verify: true
     enabled: true
+  - site: "${SITE_NAME_INFRABASE}"
+    url: "${NSX_URL_INFRABASE}"
+    user_env: "${SITE_ENV_INFRABASE}"
+    password_env: "${SITE_ENV_PASS_INFRABASE}"
+    tls_skip_verify: true
+    enabled: true
 EOF
 
 cat > "${INSTALL_DIR}/.env" <<EOF
 INFLUX_TOKEN=${INFLUX_TOKEN}
 ${SITE_ENV}=${NSX_USER}
 ${SITE_ENV_PASS}='${NSX_PASS}'
+${SITE_ENV_INFRABASE}=${NSX_USER_INFRABASE}
+${SITE_ENV_PASS_INFRABASE}='${NSX_PASS_INFRABASE}'
 EOF
 chmod 600 "${INSTALL_DIR}/.env"
 
