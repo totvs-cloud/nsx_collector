@@ -33,8 +33,8 @@ update() {
     local tmp="/tmp/${name}-build"
     rm -rf "$tmp"
 
-    if ! git clone --depth 1 "$repo" "$tmp" 2>&1; then
-        err "clone falhou: $repo"
+    if ! git clone --depth 1 -b master "$repo" "$tmp" 2>&1; then
+        err "clone falhou: $repo (branch master)"
         return 1
     fi
 
