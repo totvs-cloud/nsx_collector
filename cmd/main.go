@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/joho/godotenv"
@@ -19,12 +21,14 @@ import (
 	"nsx-collector/internal/collector"
 	"nsx-collector/internal/config"
 	influxpkg "nsx-collector/internal/influxdb"
+	"nsx-collector/internal/nsx"
 )
 
 func main() {
 	configFile := flag.String("config", "/home/nsx_collector/configs/config.yaml", "Path to config file")
 	managersFile := flag.String("managers", "/home/nsx_collector/configs/managers.yaml", "Path to managers file")
 	envFile := flag.String("env-file", "/home/nsx_collector/.env", "Path to .env file")
+	printClusters := flag.Bool("print-clusters", false, "Print T0 edge clusters as JSON and exit (used by scripts/generate-mrpe-ha.sh)")
 	flag.Parse()
 
 	// Load .env file
@@ -44,6 +48,13 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to load managers: %v\n", err)
 		os.Exit(1)
+	}
+
+	// One-shot: print T0 edge clusters as JSON and exit.
+	// Consumed by scripts/generate-mrpe-ha.sh to render mrpe.cfg.d entries.
+	if *printClusters {
+		runPrintClusters(managers)
+		return
 	}
 
 	// Initialize logger
@@ -140,6 +151,43 @@ func main() {
 	}
 
 	logger.Info("nsx-collector stopped")
+}
+
+// runPrintClusters queries each enabled manager for its T0 edge clusters and
+// prints a flat JSON array to stdout, then exits. Used by
+// scripts/generate-mrpe-ha.sh to render one MRPE entry per T0 cluster.
+//
+// Output schema (one element per T0 cluster, sorted by site then name):
+//   [{"site":"TESP3","t0_cluster_id":"53129cbd-...","t0_display_name":"T0-Cluster_1"}, ...]
+//
+// Exit code: 0 if at least one cluster found; 1 if any manager fails or none
+// returned. Errors go to stderr; stdout stays clean for piping.
+func runPrintClusters(managers []config.Manager) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var out []collector.T0Cluster
+	failed := false
+	for _, mgr := range managers {
+		client := nsx.NewClient(mgr.URL, mgr.Username, mgr.Password, mgr.TLSSkipVerify)
+		clusters, err := collector.ListT0Clusters(ctx, client, mgr.Site)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "print-clusters: %s: %v\n", mgr.Site, err)
+			failed = true
+			continue
+		}
+		out = append(out, clusters...)
+	}
+
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(out); err != nil {
+		fmt.Fprintf(os.Stderr, "print-clusters: encode: %v\n", err)
+		os.Exit(1)
+	}
+	if failed || len(out) == 0 {
+		os.Exit(1)
+	}
 }
 
 func initLogger(cfg config.LoggingConfig) (*zap.Logger, error) {

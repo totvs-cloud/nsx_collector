@@ -68,4 +68,18 @@ go version || { err "go nao encontrado"; exit 1; }
 update_collector "nsx-collector" "/home/nsx_collector" "./cmd/"
 update_collector "aci-collector" "/home/aci_collector" "./cmd/aci-collector/"
 
+# Regenera mrpe.cfg de HA somente se a integração checkmk estiver habilitada
+# (script local instalado em /opt/nsx-collector/checkmk-nsx-ha.sh).
+# Enquanto estiver segurada, este passo vira no-op.
+if [ -x /opt/nsx-collector/checkmk-nsx-ha.sh ] \
+   && [ -d /etc/check_mk/mrpe.cfg.d ] \
+   && [ -x /home/nsx_collector/scripts/generate-mrpe-ha.sh ]; then
+    log "Regenerando mrpe.cfg de HA"
+    # 1 ciclo HA já rodou (interval default = 1m); damos folga
+    sleep 75
+    bash /home/nsx_collector/scripts/generate-mrpe-ha.sh || warn "generate-mrpe-ha.sh falhou (nao bloqueante)"
+else
+    warn "checkmk-nsx-ha.sh nao instalado em /opt/nsx-collector/ — pulando geracao de mrpe.cfg"
+fi
+
 log "Concluido"

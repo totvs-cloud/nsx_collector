@@ -78,6 +78,18 @@ func (c *Client) GetLogicalRouters(ctx context.Context) ([]LogicalRouter, error)
 	return all, nil
 }
 
+// GetLogicalRouterStatus returns the per-transport-node HA state of one
+// logical router (T0/T1 with SR). The legacy /api/v1/logical-routers/<id>/status
+// endpoint is the only HA-state source that works on NSX versions where
+// /policy/.../locale-services/<ls>/state returns 404.
+func (c *Client) GetLogicalRouterStatus(ctx context.Context, lrID string) (*LogicalRouterStatus, error) {
+	var result LogicalRouterStatus
+	if err := c.doGet(ctx, "/api/v1/logical-routers/"+lrID+"/status", &result); err != nil {
+		return nil, fmt.Errorf("logical router %s status: %w", lrID, err)
+	}
+	return &result, nil
+}
+
 // GetLogicalRouterPorts returns all logical router ports, paginating automatically.
 // Used to build the T1→T0 parent mapping via LinkedRouterPort entries.
 func (c *Client) GetLogicalRouterPorts(ctx context.Context) ([]LogicalRouterPort, error) {

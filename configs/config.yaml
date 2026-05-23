@@ -16,6 +16,7 @@ intervals:
   default: 40s
   traffic: 15s
   slow: 5m    # alarms, capacity, LB — dados que mudam lentamente
+  ha: 1m      # HA de SR por T1 — 10 observados por T0 cluster (ver ha_watch em managers.yaml)
 
 slack:
   enabled: true

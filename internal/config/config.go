@@ -61,6 +61,7 @@ type IntervalConfig struct {
 	Default time.Duration `yaml:"default"` // for cluster, nodes, routers
 	Traffic time.Duration `yaml:"traffic"` // for interface throughput (future)
 	Slow    time.Duration `yaml:"slow"`    // for alarms, capacity, LB (changes slowly)
+	HA      time.Duration `yaml:"ha"`      // for T0/T1 HA state of observed SRs (default 1m)
 }
 
 // LoadConfig reads and parses the collector config file.
@@ -122,5 +123,8 @@ func (c *Config) setDefaults() {
 	}
 	if c.Intervals.Slow == 0 {
 		c.Intervals.Slow = 5 * time.Minute
+	}
+	if c.Intervals.HA == 0 {
+		c.Intervals.HA = 1 * time.Minute
 	}
 }

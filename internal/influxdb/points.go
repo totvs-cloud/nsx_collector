@@ -355,6 +355,124 @@ func LBPoolPoint(site string, poolMap map[string]nsx.LBPool, pool nsx.LBPoolStat
 	)
 }
 
+// ---------------------------------------------------------------------------
+// HA state (T0/T1 Service Router role per transport node)
+// ---------------------------------------------------------------------------
+
+// haStateInt maps NSX HA status string to a sortable integer (higher = healthier).
+// ACTIVE=2, STANDBY=1, anything else (DOWN/SYNC/UNKNOWN/empty)=0.
+func haStateInt(s string) int64 {
+	switch strings.ToUpper(strings.TrimSpace(s)) {
+	case "ACTIVE":
+		return 2
+	case "STANDBY":
+		return 1
+	}
+	return 0
+}
+
+// HAStatePoint records the HA role of one (T1, transport_node) pair at a
+// point in time. Tagging by t0_cluster_id allows aggregations per T0 cluster.
+// measurement: nsx_ha_state
+// tags: site, t0_cluster_id, t0_name, t1_id, t1_name, transport_node_id, ha_state
+// fields: state_num (int)
+func HAStatePoint(site, t0ClusterID, t0Name, t1ID, t1Name, tnID, haState string, now time.Time) *write.Point {
+	if t0Name == "" {
+		t0Name = "-"
+	}
+	if tnID == "" {
+		tnID = "-"
+	}
+	return influxdb2.NewPoint(
+		"nsx_ha_state",
+		map[string]string{
+			"site":              site,
+			"t0_cluster_id":     t0ClusterID,
+			"t0_name":           t0Name,
+			"t1_id":             t1ID,
+			"t1_name":           t1Name,
+			"transport_node_id": tnID,
+			"ha_state":          strings.ToUpper(strings.TrimSpace(haState)),
+		},
+		map[string]interface{}{
+			"state_num": haStateInt(haState),
+		},
+		now,
+	)
+}
+
+// HAClusterSummaryPoint records the consensus ACTIVE edge for one T0 cluster
+// per cycle (how many of the N observed T1s share that ACTIVE node).
+// measurement: nsx_ha_cluster_summary
+// tags: site, t0_cluster_id, t0_name, consensus_node_id
+// fields: observed, consensus_count, outliers (= observed - consensus_count)
+func HAClusterSummaryPoint(site, t0ClusterID, t0Name, consensusNodeID string, observed, consensusCount int, now time.Time) *write.Point {
+	if t0Name == "" {
+		t0Name = "-"
+	}
+	if consensusNodeID == "" {
+		consensusNodeID = "-"
+	}
+	outliers := observed - consensusCount
+	if outliers < 0 {
+		outliers = 0
+	}
+	return influxdb2.NewPoint(
+		"nsx_ha_cluster_summary",
+		map[string]string{
+			"site":              site,
+			"t0_cluster_id":     t0ClusterID,
+			"t0_name":           t0Name,
+			"consensus_node_id": consensusNodeID,
+		},
+		map[string]interface{}{
+			"observed":        int64(observed),
+			"consensus_count": int64(consensusCount),
+			"outliers":        int64(outliers),
+		},
+		now,
+	)
+}
+
+// HAChangeEventPoint records a detected HA shift on a T0 cluster: the
+// majority (>= ceil(observed/2)) of the observed T1s moved ACTIVE from
+// from_active to to_active between two consecutive HA polls.
+// measurement: nsx_ha_change
+// tags: site, t0_cluster_id, t0_name, from_active, to_active
+// fields: changed_count, observed_count, changed_names (csv)
+func HAChangeEventPoint(site, t0ClusterID, t0Name, fromActive, toActive string, changedCount, observedCount int, changedNames []string, now time.Time) *write.Point {
+	if t0Name == "" {
+		t0Name = "-"
+	}
+	if fromActive == "" {
+		fromActive = "-"
+	}
+	if toActive == "" {
+		toActive = "-"
+	}
+	// Cap CSV at 500 chars to keep the point bounded.
+	csv := strings.Join(changedNames, ",")
+	if len(csv) > 500 {
+		csv = csv[:500] + "…"
+	}
+	return influxdb2.NewPoint(
+		"nsx_ha_change",
+		map[string]string{
+			"site":          site,
+			"t0_cluster_id": t0ClusterID,
+			"t0_name":       t0Name,
+			"from_active":   fromActive,
+			"to_active":     toActive,
+		},
+		map[string]interface{}{
+			"changed_count":  int64(changedCount),
+			"observed_count": int64(observedCount),
+			"changed_names":  csv,
+		},
+		now,
+	)
+}
+
 // EdgeUplinkStatsPoint converts interface stats for a physical Edge uplink to an InfluxDB point.
 // All fields are cumulative counters — use derivative() in Flux to compute throughput rates.
 // link_speed_mbps is the negotiated link speed in Mbps (0 = unknown/not connected).

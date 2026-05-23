@@ -5,3 +5,14 @@ managers:
     password_env: "NSX_TESP6_PASS"
     tls_skip_verify: true
     enabled: true
+    # Onde o collector persiste o inventário de T1s observados.
+    state_dir: /home/nsx_collector/state
+    # HA watch: 10 T1s por T0 edge cluster, sorteados na 1ª execução.
+    # Modos: auto | pinned | hybrid
+    #   - auto:   sorteia size T1s aleatoriamente, persiste e mantém (healing).
+    #   - pinned: usa só os nomes em t1_names que existirem no cluster.
+    #   - hybrid: começa pelos pinned, completa o resto com auto até size.
+    ha_watch:
+      mode: auto
+      size: 10
+      t1_names: []

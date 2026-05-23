@@ -23,6 +23,9 @@ type Worker struct {
 	logger          *zap.Logger
 	slowInterval    time.Duration
 	lastSlow        time.Time
+	haInterval      time.Duration
+	lastHA          time.Time
+	haCollector     *HACollector
 	// speedOverrides maps node_name -> interface_id -> speed_mbps.
 	// Used to override link_speed when the NSX API returns 0 (fp-* DPDK interfaces).
 	speedOverrides  map[string]map[string]int64
@@ -33,12 +36,15 @@ type Worker struct {
 // NewWorker creates a new collector worker for the given manager.
 func NewWorker(mgr config.Manager, writer *influxpkg.Writer, intervals config.IntervalConfig, speedOverrides map[string]map[string]int64, rateCalc *RateCalculator, alertEval *alerting.Evaluator) *Worker {
 	client := nsx.NewClient(mgr.URL, mgr.Username, mgr.Password, mgr.TLSSkipVerify)
+	logger := zap.L().Named(mgr.Site)
 	return &Worker{
 		manager:        mgr,
 		client:         client,
 		writer:         writer,
-		logger:         zap.L().Named(mgr.Site),
+		logger:         logger,
 		slowInterval:   intervals.Slow,
+		haInterval:     intervals.HA,
+		haCollector:    NewHACollector(mgr, client, logger.Named("ha")),
 		speedOverrides: speedOverrides,
 		rateCalc:       rateCalc,
 		alertEval:      alertEval,
@@ -67,6 +73,18 @@ func (w *Worker) Collect(ctx context.Context) {
 	runSlow := w.lastSlow.IsZero() || time.Since(w.lastSlow) >= w.slowInterval
 	if runSlow {
 		w.lastSlow = now
+	}
+
+	// HA-state gating: runs on its own cadence (default 1m), independent of
+	// the slow path. First cycle baselines (no change events possible).
+	if w.haInterval > 0 && (w.lastHA.IsZero() || time.Since(w.lastHA) >= w.haInterval) {
+		if haPoints, err := w.haCollector.CollectHA(ctx); err != nil {
+			logger.Warn("ha collection failed", zap.Error(err))
+			telemetry.CollectErrors.WithLabelValues(site, "ha").Inc()
+		} else if len(haPoints) > 0 {
+			points = append(points, haPoints...)
+		}
+		w.lastHA = now
 	}
 
 	// 1. Cluster status

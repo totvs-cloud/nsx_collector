@@ -125,9 +125,29 @@ type LogicalRouterList struct {
 
 // LogicalRouter is one logical router entry.
 type LogicalRouter struct {
-	ID          string `json:"id"`
-	DisplayName string `json:"display_name"`
-	RouterType  string `json:"router_type"` // TIER0 | TIER1 | VRF
+	ID                     string `json:"id"`
+	DisplayName            string `json:"display_name"`
+	RouterType             string `json:"router_type"` // TIER0 | TIER1 | VRF
+	EdgeClusterID          string `json:"edge_cluster_id,omitempty"`
+	HighAvailabilityMode   string `json:"high_availability_mode,omitempty"` // ACTIVE_STANDBY | ACTIVE_ACTIVE
+	FailoverMode           string `json:"failover_mode,omitempty"`          // PREEMPTIVE | NON_PREEMPTIVE
+}
+
+// LogicalRouterStatus represents GET /api/v1/logical-routers/{id}/status.
+// per_node_status carries the HA role of this router's Service Router on each
+// edge transport node (ACTIVE/STANDBY/DOWN/SYNC/UNKNOWN).
+type LogicalRouterStatus struct {
+	LogicalRouterID     string             `json:"logical_router_id"`
+	LastUpdateTimestamp int64              `json:"last_update_timestamp"` // epoch ms
+	PerNodeStatus       []PerNodeHAStatus  `json:"per_node_status"`
+}
+
+// PerNodeHAStatus is one transport_node entry inside LogicalRouterStatus.
+type PerNodeHAStatus struct {
+	TransportNodeID        string `json:"transport_node_id"`
+	ServiceRouterID        string `json:"service_router_id,omitempty"`
+	HighAvailabilityStatus string `json:"high_availability_status"` // ACTIVE | STANDBY | DOWN | SYNC | UNKNOWN
+	IsDefaultSubCluster    bool   `json:"is_default_sub_cluster,omitempty"`
 }
 
 // LogicalRouterPortList represents GET /api/v1/logical-router-ports

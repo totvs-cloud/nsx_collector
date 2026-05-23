@@ -61,6 +61,8 @@ telemetry:
 intervals:
   default: 40s
   traffic: 15s
+  slow: 5m
+  ha: 1m
 EOF
 
 cat > "$TMPDIR/managers.yaml" <<'EOF'
@@ -71,6 +73,11 @@ managers:
     password_env: "NSX_TESP3_PASS"
     tls_skip_verify: true
     enabled: true
+    state_dir: /home/nsx_collector/state
+    ha_watch:
+      mode: auto
+      size: 10
+      t1_names: []
 EOF
 
 cat > "$TMPDIR/.env" <<EOF

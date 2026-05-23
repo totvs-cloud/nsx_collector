@@ -22,9 +22,32 @@ type Manager struct {
 	TLSSkipVerify bool `yaml:"tls_skip_verify"`
 	Enabled     bool   `yaml:"enabled"`
 
+	// HAWatch controls how the HA collector chooses which T1s to observe
+	// per T0 edge cluster. See HAWatchConfig.
+	HAWatch HAWatchConfig `yaml:"ha_watch"`
+
+	// StateDir is where the collector persists per-site state files
+	// (inventário de T1s observados, etc.). Default: /home/nsx_collector/state.
+	StateDir string `yaml:"state_dir"`
+
 	// Resolved at load time from env vars
 	Username string `yaml:"-"`
 	Password string `yaml:"-"`
+}
+
+// HAWatchConfig selects how many T1s per T0 edge cluster the HA collector
+// observes, and how they are picked. The collector persists the effective
+// list in <state_dir>/ha-watch-<site>.json and self-heals when an observed
+// T1 disappears.
+type HAWatchConfig struct {
+	// Mode: "auto" (random pick on first run), "pinned" (only names in
+	// T1Names that exist), or "hybrid" (pinned first, fill with auto).
+	// Default: "auto".
+	Mode string `yaml:"mode"`
+	// Size is the target number of T1s observed per T0 cluster. Default: 10.
+	Size int `yaml:"size"`
+	// T1Names is a list of T1 display_names used in pinned/hybrid modes.
+	T1Names []string `yaml:"t1_names"`
 }
 
 // LoadManagers reads and parses the managers inventory file.
@@ -55,6 +78,16 @@ func LoadManagers(path string) ([]Manager, error) {
 		}
 		if m.Password == "" {
 			return nil, fmt.Errorf("manager %s: env var %s not set", m.Site, m.PasswordEnv)
+		}
+		// Defaults for HA watch / state_dir
+		if m.HAWatch.Mode == "" {
+			m.HAWatch.Mode = "auto"
+		}
+		if m.HAWatch.Size <= 0 {
+			m.HAWatch.Size = 10
+		}
+		if m.StateDir == "" {
+			m.StateDir = "/home/nsx_collector/state"
 		}
 		enabled = append(enabled, m)
 	}

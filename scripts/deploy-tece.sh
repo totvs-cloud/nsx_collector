@@ -65,6 +65,8 @@ telemetry:
 intervals:
   default: 40s
   traffic: 15s
+  slow: 5m
+  ha: 1m
 EOF
 
 cat > "${INSTALL_DIR}/configs/managers.yaml" <<EOF
@@ -75,6 +77,11 @@ managers:
     password_env: "${SITE_ENV_PASS}"
     tls_skip_verify: true
     enabled: true
+    state_dir: /home/nsx_collector/state
+    ha_watch:
+      mode: auto
+      size: 10
+      t1_names: []
 EOF
 
 cat > "${INSTALL_DIR}/.env" <<EOF
