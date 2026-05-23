@@ -88,6 +88,21 @@ func (h *HACollector) CollectHA(ctx context.Context) ([]*write.Point, error) {
 		return nil, fmt.Errorf("ha: list logical routers: %w", err)
 	}
 
+	// Resolve transport_node_id → transport_node_name so we can tag HA points
+	// with human-readable edge names (e.g. tesp3edg1p00001.tesp3infra.local)
+	// instead of just UUIDs. Best-effort: if the call fails the names stay
+	// empty and the dashboard falls back to truncated UUIDs.
+	tnNames := map[string]string{}
+	if tns, err := h.client.GetTransportNodes(ctx); err == nil {
+		for _, tn := range tns {
+			if tn.ID != "" && tn.DisplayName != "" {
+				tnNames[tn.ID] = tn.DisplayName
+			}
+		}
+	} else {
+		h.logger.Debug("ha: GetTransportNodes failed, names unavailable", zap.Error(err))
+	}
+
 	t0Names := map[string]string{}          // edge_cluster_id → T0 display name (first match)
 	t1ByCluster := map[string][]nsx.LogicalRouter{}
 	for _, r := range routers {
@@ -189,7 +204,8 @@ func (h *HACollector) CollectHA(ctx context.Context) ([]*write.Point, error) {
 					points = append(points, influxpkg.HAStatePoint(
 						site, clusterID, ci.T0Name,
 						obs.ID, obs.Name,
-						pn.TransportNodeID, pn.HighAvailabilityStatus,
+						pn.TransportNodeID, tnNames[pn.TransportNodeID],
+						pn.HighAvailabilityStatus,
 						now,
 					))
 					ptsMu.Unlock()
@@ -230,7 +246,7 @@ func (h *HACollector) CollectHA(ctx context.Context) ([]*write.Point, error) {
 		}
 		consensusNode, consensusCount := mostFrequent(nodeCount)
 		points = append(points, influxpkg.HAClusterSummaryPoint(
-			site, clusterID, ci.T0Name, consensusNode,
+			site, clusterID, ci.T0Name, consensusNode, tnNames[consensusNode],
 			len(seen), consensusCount, now,
 		))
 
@@ -289,7 +305,9 @@ func (h *HACollector) CollectHA(ctx context.Context) ([]*write.Point, error) {
 		if len(changed) >= threshold && observed > 0 {
 			sort.Strings(changed)
 			points = append(points, influxpkg.HAChangeEventPoint(
-				site, clusterID, ci.T0Name, fromActive, toActive,
+				site, clusterID, ci.T0Name,
+				fromActive, toActive,
+				tnNames[fromActive], tnNames[toActive],
 				len(changed), observed, changed, now,
 			))
 			telemetry.HAChanges.WithLabelValues(site, clusterID).Inc()
