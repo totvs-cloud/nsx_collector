@@ -1,0 +1,1503 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      },
+      {
+        "name": "HA Change Events",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "efcqeppjazvgga"
+        },
+        "enable": true,
+        "iconColor": "red",
+        "query": "from(bucket: \"nsx\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"nsx_ha_change\")\n  |> filter(fn: (r) => r.site =~ /${site:regex}/)\n  |> filter(fn: (r) => r.t0_name =~ /${edge_cluster:regex}/)\n  |> filter(fn: (r) => r._field == \"changed_count\")\n  |> keep(columns: [\"_time\", \"site\", \"t0_name\", \"from_active\", \"to_active\", \"_value\"])",
+        "target": {
+          "type": "fluxQuery"
+        },
+        "titleFormat": "FAILOVER ${__field.labels.t0_name} (${__field.labels.site})",
+        "textFormat": "${__field.labels.from_active} → ${__field.labels.to_active} (${__value.numeric} T1s)"
+      }
+    ]
+  },
+  "description": "Visão tática do estado HA dos T0 edge clusters NSX-T monitorados pelo nsx-collector (10 T1s observados por cluster). Lê measurements: nsx_ha_state, nsx_ha_cluster_summary, nsx_ha_change.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "id": 500,
+      "type": "text",
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "transparent": true,
+      "options": {
+        "mode": "markdown",
+        "content": "### NSX HA — Tactical\n**O que você vê:** o collector observa 10 T1s por **edge cluster** (não por T0 lógico) a cada 1 min. 1 edge cluster atende N T0s/VRFs no NSX — todos compartilham o mesmo papel HA. **Outliers** = T1s observados cujo ACTIVE está num edge diferente do consenso do edge cluster (sintoma de migração pontual). Mudança CRIT é emitida quando ≥maioria dos 10 observados troca ACTIVE entre 2 coletas."
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 3
+      },
+      "id": 100,
+      "title": "Estado Atual — Consenso por Edge Cluster (cada cluster pode atender vários T0/VRFs)",
+      "type": "row"
+    },
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Mudanças HA (24h) — por edge cluster",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
+            ]
+          },
+          "unit": "short",
+          "noValue": "Sem mudanças HA detectadas — ambiente estável"
+        }
+      },
+      "options": {
+        "graphMode": "area",
+        "colorMode": "background",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"nsx_ha_change\" and r._field == \"changed_count\")\n  |> filter(fn: (r) => r.site =~ /${site:regex}/)\n  |> filter(fn: (r) => r.t0_name =~ /${edge_cluster:regex}/)\n  |> group(columns: [\"site\", \"t0_name\"])\n  |> count()\n  |> map(fn: (r) => ({r with _field: r.site + \" / \" + r.t0_name}))",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "T1s observados (total nos clusters filtrados)",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 4
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "unit": "short"
+        }
+      },
+      "options": {
+        "graphMode": "none",
+        "colorMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx\")\n  |> range(start: -2m)\n  |> filter(fn: (r) => r._measurement == \"nsx_ha_cluster_summary\" and r._field == \"observed\")\n  |> filter(fn: (r) => r.site =~ /${site:regex}/)\n  |> filter(fn: (r) => r.t0_name =~ /${edge_cluster:regex}/)\n  |> last()\n  |> group()\n  |> sum()",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Outliers ativos (T1s fora do consenso, agora)",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 4
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
+            ]
+          },
+          "unit": "short",
+          "noValue": "0 (todos os T1s observados no consenso)"
+        }
+      },
+      "options": {
+        "graphMode": "none",
+        "colorMode": "background",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx\")\n  |> range(start: -2m)\n  |> filter(fn: (r) => r._measurement == \"nsx_ha_cluster_summary\" and r._field == \"outliers\")\n  |> filter(fn: (r) => r.site =~ /${site:regex}/)\n  |> filter(fn: (r) => r.t0_name =~ /${edge_cluster:regex}/)\n  |> last()\n  |> group()\n  |> sum()",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Snapshot — consenso por Edge Cluster (última coleta)",
+      "description": "1 linha por edge_cluster_id. 'Edge Cluster (nome)' é o display_name do 1º T0 capturado naquele edge cluster — outros T0s/VRFs do mesmo cluster compartilham o mesmo HA. 'Outliers' = T1s observados cujo ACTIVE está num edge diferente do consenso (sintoma de migração pontual).",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "outliers"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 1
+                    },
+                    {
+                      "color": "red",
+                      "value": 3
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "consensus_count"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "ACTIVE consensus (n)"
+              },
+              {
+                "id": "custom.width",
+                "value": 170
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "observed"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Observados"
+              },
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "edge_active"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Edge ACTIVE (nome / id curto)"
+              },
+              {
+                "id": "custom.width",
+                "value": 280
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "edge_cluster_short"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "edge_cluster_id (curto)"
+              },
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "site"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "t0_name"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Edge Cluster (nome do 1º T0)"
+              },
+              {
+                "id": "custom.width",
+                "value": 260
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "_time"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Última coleta"
+              },
+              {
+                "id": "custom.width",
+                "value": 200
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        },
+        "sortBy": [
+          {
+            "displayName": "outliers",
+            "desc": true
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "import \"strings\"\nfrom(bucket: \"nsx\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"nsx_ha_cluster_summary\")\n  |> filter(fn: (r) => r.site =~ /${site:regex}/)\n  |> filter(fn: (r) => r.t0_name =~ /${edge_cluster:regex}/)\n  |> filter(fn: (r) => r._field == \"observed\" or r._field == \"consensus_count\" or r._field == \"outliers\")\n  |> last()\n  |> pivot(rowKey: [\"_time\", \"site\", \"t0_name\", \"t0_cluster_id\", \"consensus_node_id\", \"consensus_node_name\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> map(fn: (r) => ({r with\n      edge_cluster_short: strings.substring(v: r.t0_cluster_id, start: 0, end: 8) + \"…\",\n      edge_active: if exists r.consensus_node_name and r.consensus_node_name != \"-\" and r.consensus_node_name != \"\" then r.consensus_node_name else strings.substring(v: r.consensus_node_id, start: 0, end: 12) + \"…\"\n    }))\n  |> group()\n  |> keep(columns: [\"_time\", \"site\", \"t0_name\", \"edge_cluster_short\", \"edge_active\", \"observed\", \"consensus_count\", \"outliers\"])",
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {
+              "site": 0,
+              "t0_name": 1,
+              "edge_cluster_short": 2,
+              "consensus_count": 4,
+              "observed": 5,
+              "outliers": 6,
+              "_time": 7,
+              "edge_active": 3
+            },
+            "renameByName": {}
+          }
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "bargauge",
+      "title": "Distribuição dos T1s observados por transport_node ACTIVE",
+      "description": "Por edge cluster, quantos dos T1s observados estão com ACTIVE em cada transport_node. Cluster monolítico ACTIVE_STANDBY mostra 1 barra cheia (ex.: 10/0). Cluster distribuído mostra 2+ barras (ex.: 6/4 = sintoma de migração passada não preemptada, ou ACTIVE_ACTIVE configurado). Cor neutra: a interpretação fica por sua conta.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "unit": "short",
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "showUnfilled": true,
+        "valueMode": "color",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "import \"strings\"\nfrom(bucket: \"nsx\")\n  |> range(start: -3m)\n  |> filter(fn: (r) => r._measurement == \"nsx_ha_state\" and r._field == \"state_num\" and r.ha_state == \"ACTIVE\")\n  |> filter(fn: (r) => r.site =~ /${site:regex}/)\n  |> filter(fn: (r) => r.t0_name =~ /${edge_cluster:regex}/)\n  |> last()\n  |> group(columns: [\"site\", \"t0_name\", \"transport_node_id\", \"transport_node_name\"])\n  |> count()\n  |> map(fn: (r) => ({r with _field: r.t0_name + \" → \" + (if exists r.transport_node_name and r.transport_node_name != \"-\" and r.transport_node_name != \"\" then r.transport_node_name else strings.substring(v: r.transport_node_id, start: 0, end: 12) + \"…\")}))\n  |> group()\n  |> keep(columns: [\"_field\", \"_value\"])\n  |> sort(columns: [\"_field\", \"_value\"], desc: false)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "id": 200,
+      "title": "Cronologia — quem é ACTIVE ao longo do tempo",
+      "type": "row"
+    },
+    {
+      "id": 5,
+      "type": "state-timeline",
+      "title": "ACTIVE consensus por Edge Cluster (timeline)",
+      "description": "Cada linha = 1 edge cluster. Cor = transport_node_id que é ACTIVE consensus naquele instante. Troca de cor = failover de cluster.",
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 0,
+            "fillOpacity": 70
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "alignValue": "left",
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "mergeValues": true,
+        "rowHeight": 0.9,
+        "showValue": "auto",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "import \"strings\"\nfrom(bucket: \"nsx\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"nsx_ha_cluster_summary\" and r._field == \"consensus_count\")\n  |> filter(fn: (r) => r.site =~ /${site:regex}/)\n  |> filter(fn: (r) => r.t0_name =~ /${edge_cluster:regex}/)\n  |> map(fn: (r) => ({\n      _time: r._time,\n      _value: if exists r.consensus_node_name and r.consensus_node_name != \"-\" and r.consensus_node_name != \"\" then r.consensus_node_name else strings.substring(v: r.consensus_node_id, start: 0, end: 8),\n      _field: r.site + \" / \" + r.t0_name\n    }))\n  |> group(columns: [\"_field\"])",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 35
+      },
+      "id": 300,
+      "title": "Eventos de Failover (nsx_ha_change)",
+      "type": "row"
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Tabela de eventos — últimas trocas detectadas",
+      "description": "Cada linha = 1 evento emitido pelo collector quando ≥ ceil(observed/2) dos T1s observados trocaram ACTIVE entre 2 coletas. Names lista os T1s que mudaram.",
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 36
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              }
+            ]
+          },
+          "noValue": "Sem mudanças HA detectadas — ambiente estável"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "_time"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Quando"
+              },
+              {
+                "id": "custom.width",
+                "value": 200
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "site"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "t0_name"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Edge Cluster (nome)"
+              },
+              {
+                "id": "custom.width",
+                "value": 220
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "from_edge"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "De (edge anterior)"
+              },
+              {
+                "id": "custom.width",
+                "value": 320
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "to_edge"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Para (edge novo)"
+              },
+              {
+                "id": "custom.width",
+                "value": 320
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "changed_count"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Mudaram"
+              },
+              {
+                "id": "custom.width",
+                "value": 100
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "orange",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 5
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "observed_count"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Observados"
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "changed_names"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "T1s afetados"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        },
+        "sortBy": [
+          {
+            "displayName": "Quando",
+            "desc": true
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "import \"strings\"\nfrom(bucket: \"nsx\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"nsx_ha_change\")\n  |> filter(fn: (r) => r.site =~ /${site:regex}/)\n  |> filter(fn: (r) => r.t0_name =~ /${edge_cluster:regex}/)\n  |> filter(fn: (r) => r._field == \"changed_count\" or r._field == \"observed_count\" or r._field == \"changed_names\")\n  |> pivot(rowKey: [\"_time\", \"site\", \"t0_name\", \"from_active\", \"to_active\", \"from_active_name\", \"to_active_name\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> map(fn: (r) => ({r with\n      from_edge: if exists r.from_active_name and r.from_active_name != \"-\" and r.from_active_name != \"\" then r.from_active_name else r.from_active,\n      to_edge:   if exists r.to_active_name and r.to_active_name != \"-\" and r.to_active_name != \"\"     then r.to_active_name   else r.to_active\n    }))\n  |> keep(columns: [\"_time\", \"site\", \"t0_name\", \"from_edge\", \"to_edge\", \"changed_count\", \"observed_count\", \"changed_names\"])",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "barchart",
+      "title": "Eventos de Failover por hora (timeline agregada)",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 46
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 70,
+            "gradientMode": "none"
+          },
+          "unit": "short",
+          "noValue": "Sem mudanças HA detectadas — ambiente estável"
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "orientation": "auto",
+        "showValue": "auto",
+        "stacking": "normal",
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "xField": "_time"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"nsx_ha_change\" and r._field == \"changed_count\")\n  |> filter(fn: (r) => r.site =~ /${site:regex}/)\n  |> filter(fn: (r) => r.t0_name =~ /${edge_cluster:regex}/)\n  |> aggregateWindow(every: 1h, fn: count, createEmpty: false)\n  |> group(columns: [\"site\", \"t0_name\"])\n  |> map(fn: (r) => ({r with _field: r.site + \" / \" + r.t0_name}))",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 54
+      },
+      "id": 400,
+      "title": "Detalhe — T1s observados",
+      "type": "row"
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "T1s observados — ACTIVE vs Consenso (outliers no topo)",
+      "description": "1 linha por T1 monitorado. 'status' = 'consensus' (cinza) quando o ACTIVE bate com o consenso do edge cluster, 'OUTLIER' (vermelho) quando difere. Ordene a tabela por status pra ver os outliers em cima.",
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 55
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "site"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "t0_name"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Edge Cluster (nome)"
+              },
+              {
+                "id": "custom.width",
+                "value": 220
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "t1_name"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "T1 (display_name)"
+              },
+              {
+                "id": "custom.width",
+                "value": 280
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "consensus": {
+                        "color": "green",
+                        "index": 0,
+                        "text": "✓ consensus"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "OUTLIER": {
+                        "color": "red",
+                        "index": 1,
+                        "text": "⚠ OUTLIER"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.width",
+                "value": 130
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "active_edge"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "ACTIVE em (nome / id curto)"
+              },
+              {
+                "id": "custom.width",
+                "value": 280
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "consensus_edge"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Consenso (nome / id curto)"
+              },
+              {
+                "id": "custom.width",
+                "value": 280
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        },
+        "sortBy": [
+          {
+            "displayName": "status",
+            "desc": true
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "import \"join\"\nimport \"strings\"\n\nactive = from(bucket: \"nsx\")\n  |> range(start: -3m)\n  |> filter(fn: (r) => r._measurement == \"nsx_ha_state\" and r._field == \"state_num\" and r.ha_state == \"ACTIVE\")\n  |> filter(fn: (r) => r.site =~ /${site:regex}/)\n  |> filter(fn: (r) => r.t0_name =~ /${edge_cluster:regex}/)\n  |> last()\n  |> group()\n  |> keep(columns: [\"site\", \"t0_cluster_id\", \"t0_name\", \"t1_name\", \"transport_node_id\", \"transport_node_name\"])\n\nconsensus = from(bucket: \"nsx\")\n  |> range(start: -3m)\n  |> filter(fn: (r) => r._measurement == \"nsx_ha_cluster_summary\" and r._field == \"observed\")\n  |> filter(fn: (r) => r.site =~ /${site:regex}/)\n  |> filter(fn: (r) => r.t0_name =~ /${edge_cluster:regex}/)\n  |> last()\n  |> group()\n  |> keep(columns: [\"t0_cluster_id\", \"consensus_node_id\", \"consensus_node_name\"])\n\njoin.inner(\n  left: active,\n  right: consensus,\n  on: (l, r) => l.t0_cluster_id == r.t0_cluster_id,\n  as: (l, r) => ({\n    site: l.site,\n    t0_name: l.t0_name,\n    t1_name: l.t1_name,\n    active_edge: if exists l.transport_node_name and l.transport_node_name != \"-\" and l.transport_node_name != \"\" then l.transport_node_name else strings.substring(v: l.transport_node_id, start: 0, end: 12) + \"…\",\n    consensus_edge: if exists r.consensus_node_name and r.consensus_node_name != \"-\" and r.consensus_node_name != \"\" then r.consensus_node_name else strings.substring(v: r.consensus_node_id, start: 0, end: 12) + \"…\",\n    status: if l.transport_node_id == r.consensus_node_id then \"consensus\" else \"OUTLIER\"\n  })\n)",
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "indexByName": {
+              "site": 0,
+              "t0_name": 1,
+              "t1_name": 2,
+              "status": 3,
+              "active_edge": 4,
+              "consensus_edge": 5
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Estado por T1 observado — bruto (1 linha por T1×TN)",
+      "description": "Tabela bruta: 1 linha por (T1, transport_node), incluindo as linhas STANDBY. Útil pra debug. Pro panorama 'limpo' do que está fora do consenso, use o painel de cima.",
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 65
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "site"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "t0_name"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Edge Cluster"
+              },
+              {
+                "id": "custom.width",
+                "value": 200
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "t1_name"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "T1 (display_name)"
+              },
+              {
+                "id": "custom.width",
+                "value": 280
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ha_state"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Status HA"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "ACTIVE": {
+                        "color": "green",
+                        "index": 0
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "STANDBY": {
+                        "color": "blue",
+                        "index": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "DOWN": {
+                        "color": "red",
+                        "index": 2
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "SYNC": {
+                        "color": "yellow",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "transport_node_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Edge (transport_node_id)"
+              },
+              {
+                "id": "custom.width",
+                "value": 360
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "_time"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Última coleta"
+              },
+              {
+                "id": "custom.width",
+                "value": 200
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "transport_node_name"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Edge (nome)"
+              },
+              {
+                "id": "custom.width",
+                "value": 280
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        },
+        "sortBy": [
+          {
+            "displayName": "T0 Cluster",
+            "desc": false
+          },
+          {
+            "displayName": "T1 (display_name)",
+            "desc": false
+          },
+          {
+            "displayName": "Status HA",
+            "desc": false
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "import \"strings\"\nfrom(bucket: \"nsx\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"nsx_ha_state\" and r._field == \"state_num\")\n  |> filter(fn: (r) => r.site =~ /${site:regex}/)\n  |> filter(fn: (r) => r.t0_name =~ /${edge_cluster:regex}/)\n  |> last()\n  |> map(fn: (r) => ({r with transport_node_name: if exists r.transport_node_name and r.transport_node_name != \"-\" and r.transport_node_name != \"\" then r.transport_node_name else strings.substring(v: r.transport_node_id, start: 0, end: 12) + \"…\"}))\n  |> keep(columns: [\"_time\", \"site\", \"t0_name\", \"t1_name\", \"transport_node_name\", \"transport_node_id\", \"ha_state\"])\n  |> group()",
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "indexByName": {
+              "site": 0,
+              "t0_name": 1,
+              "t1_name": 2,
+              "ha_state": 3,
+              "transport_node_name": 4,
+              "transport_node_id": 5,
+              "_time": 6
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "T1 selecionado — heatmap de estado (ACTIVE=2 / STANDBY=1 / outros=0)",
+      "description": "Ajuste a variável $t1_name pra focar num T1. O valor pula entre 2 (ACTIVE) e 1 (STANDBY) — cada transição visível é uma troca de papel HA daquele SR no edge.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 77
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "pointSize": 4,
+            "showPoints": "always"
+          },
+          "max": 2.2,
+          "min": -0.2,
+          "unit": "short",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN/SYNC",
+                  "index": 0
+                }
+              }
+            },
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "STANDBY",
+                  "index": 1
+                }
+              }
+            },
+            {
+              "type": "value",
+              "options": {
+                "2": {
+                  "text": "ACTIVE",
+                  "index": 2
+                }
+              }
+            }
+          ]
+        }
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "import \"strings\"\nfrom(bucket: \"nsx\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"nsx_ha_state\" and r._field == \"state_num\")\n  |> filter(fn: (r) => r.site =~ /${site:regex}/)\n  |> filter(fn: (r) => r.t1_name == \"${t1_name}\")\n  |> map(fn: (r) => ({r with _field: r.t1_name + \" @ \" + (if exists r.transport_node_name and r.transport_node_name != \"-\" and r.transport_node_name != \"\" then r.transport_node_name else strings.substring(v: r.transport_node_id, start: 0, end: 12))}))\n  |> group(columns: [\"_field\"])",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": [
+    "nsx",
+    "ha",
+    "tactical",
+    "failover"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "site",
+        "label": "Site",
+        "type": "query",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "efcqeppjazvgga"
+        },
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"nsx\", tag: \"site\", predicate: (r) => r._measurement == \"nsx_ha_cluster_summary\")",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "edge_cluster",
+        "label": "Edge Cluster",
+        "description": "1 edge cluster pode atender N T0s/VRFs no NSX. O valor exibido (= filtro) é o display_name do 1º T0 capturado por edge_cluster_id. Limitação: se dois edge clusters em sites diferentes tiverem o mesmo nome, filtrar por Site primeiro.",
+        "type": "query",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "efcqeppjazvgga"
+        },
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"nsx\", tag: \"t0_name\", predicate: (r) => r._measurement == \"nsx_ha_cluster_summary\" and r.site =~ /${site:regex}/)",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "t1_name",
+        "label": "T1 (focus na timeline)",
+        "type": "query",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "efcqeppjazvgga"
+        },
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"nsx\", tag: \"t1_name\", predicate: (r) => r._measurement == \"nsx_ha_state\")",
+        "refresh": 2,
+        "multi": false,
+        "includeAll": false,
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        }
+      }
+    ]
+  },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "NSX HA — Tactical",
+  "uid": "nsx-ha-tatico",
+  "version": 1,
+  "weekStart": ""
+}

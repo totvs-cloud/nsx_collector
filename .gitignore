@@ -1,3 +1,4 @@
 .env
 /nsx-collector
 *.upx
+coletadotemp/
