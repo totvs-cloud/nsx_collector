@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # deploy_capacitynovo.sh — instala a nova versão do nsx-collector (Capacity NSX)
-# preservando 100% do que já existe na máquina e com rollback automático.
+# clonando o repo, buildando localmente e atualizando com backup + rollback.
 #
-# DESENHO (executar como root na dev-redes do site, NÃO no laptop):
-#   1. Pré-checks (systemd, binário fonte, dirs, espaço em disco, distro).
+# DESENHO (executar como root na dev-redes do site):
+#   0. Garante git + go instalados (via dnf no OL/RHEL ou apt no Ubuntu).
+#   0b. Clona/atualiza o repo em SRC_DIR (default /opt/nsx-collector-src) e
+#       compila o binário em $SRC_DIR/bin/nsx-collector. NADA é tocado no
+#       diretório de produção até o build estar OK.
+#   1. Pré-checks (systemd, binário gerado, dirs, espaço em disco, distro).
 #   2. Backup atômico de tudo que pode mudar: binário, configs, .env,
 #      unit file, state/, sob /home/nsx_collector/backups/capacity-novo/<ts>/.
 #   3. Patch idempotente em config.yaml: adiciona blocos t1_watch e capacity
@@ -17,20 +21,37 @@
 #      voltavam após reboot).
 #   8. Prune de backups antigos (mantém últimos KEEP_BACKUPS).
 #
-# USO:
-#   sudo BIN_SOURCE=/tmp/nsx-collector ./deploy_capacitynovo.sh
+# USO (caminho feliz):
+#   sudo ./deploy_capacitynovo.sh                          # clona + builda + deploya
 #   sudo DRY_RUN=1 ./deploy_capacitynovo.sh                # simula sem mudar
+#   sudo REPO_REF=v1.2.3 ./deploy_capacitynovo.sh          # pina tag/branch/commit
 #   sudo HEALTH_TIMEOUT=120 ./deploy_capacitynovo.sh       # mais paciência
 #   sudo SKIP_HEALTH=1 ./deploy_capacitynovo.sh            # NUNCA em prod
+#   sudo SKIP_BUILD=1 BIN_SOURCE=/tmp/x ./deploy_capacitynovo.sh  # usa binário pronto
 #   sudo ROLLBACK_TO=/path/to/backup-dir ./deploy_capacitynovo.sh --rollback
 #
+# SEGURANÇA:
+#   - Toda a fase clone+build acontece em SRC_DIR, ISOLADA de $INSTALL_DIR.
+#   - Se git ou build falhar, NADA do install em produção é tocado.
+#   - Backup atômico antes do swap. Health-check com auto-rollback se falhar.
+#   - REPO_URL fixo (totvs-cloud/nsx_collector) — override só via env.
+#
 # Exit codes: 0=ok, 1=user error, 2=preflight, 3=backup, 4=install,
-#             5=health-check failed (rolled back), 6=rollback failed.
+#             5=health-check failed (rolled back), 6=rollback failed,
+#             7=build failed (nada foi tocado em produção).
 set -euo pipefail
 shopt -s lastpipe
 
 # ---------- Defaults configuráveis via env ---------------------------------
-BIN_SOURCE=${BIN_SOURCE:-/tmp/nsx-collector}
+# Build / clone
+REPO_URL=${REPO_URL:-https://github.com/totvs-cloud/nsx_collector.git}
+REPO_REF=${REPO_REF:-master}             # branch, tag ou commit
+SRC_DIR=${SRC_DIR:-/opt/nsx-collector-src}
+SKIP_BUILD=${SKIP_BUILD:-0}              # 1 = usar BIN_SOURCE existente, pula clone+build
+GO_MIN_VERSION=${GO_MIN_VERSION:-1.23}
+
+# Install / runtime
+BIN_SOURCE=${BIN_SOURCE:-}               # default vazio → vem do build em SRC_DIR
 INSTALL_DIR=${INSTALL_DIR:-/home/nsx_collector}
 SERVICE=${SERVICE:-nsx-collector}
 SERVICE_USER=${SERVICE_USER:-nsx_collector}
@@ -109,6 +130,98 @@ if [[ $ACTION == "rollback" ]]; then
   exit 0
 fi
 
+# ---------- 1b. ensure git + go ------------------------------------------
+ensure_pkg() {
+  local pkg=$1
+  if command -v "$pkg" >/dev/null 2>&1; then return 0; fi
+  say "Instalando $pkg…"
+  if command -v dnf >/dev/null 2>&1; then
+    run dnf install -y "$pkg"
+  elif command -v yum >/dev/null 2>&1; then
+    run yum install -y "$pkg"
+  elif command -v apt-get >/dev/null 2>&1; then
+    run apt-get update -y
+    run apt-get install -y "$pkg"
+  else
+    fatal "não consegui detectar gerenciador de pacotes (dnf/yum/apt) para instalar $pkg" 2
+  fi
+}
+
+# Compara duas versões "1.23.4 vs 1.23" — retorna 0 se atual >= mínima.
+version_ge() {
+  local a=$1 b=$2
+  # converte cada parte (max 3) em decimal e compara como string padded
+  local IFS=.
+  read -ra A <<<"${a//+/}"
+  read -ra B <<<"${b//+/}"
+  for i in 0 1 2; do
+    local av=${A[$i]:-0} bv=${B[$i]:-0}
+    av=${av%%[!0-9]*}; bv=${bv%%[!0-9]*}
+    av=${av:-0}; bv=${bv:-0}
+    (( 10#$av > 10#$bv )) && return 0
+    (( 10#$av < 10#$bv )) && return 1
+  done
+  return 0
+}
+
+if [[ $SKIP_BUILD -eq 1 ]]; then
+  say "SKIP_BUILD=1 — pulando clone+build; usando BIN_SOURCE=${BIN_SOURCE:-?}"
+  [[ -z "$BIN_SOURCE" ]] && fatal "SKIP_BUILD=1 exige BIN_SOURCE setado" 1
+else
+  ensure_pkg git
+  ensure_pkg gcc      # CGO pode precisar; nosso build é CGO=0 mas algumas distros forçam
+
+  if ! command -v go >/dev/null 2>&1; then
+    say "Instalando golang…"
+    ensure_pkg golang
+  fi
+  GO_VERSION=$(go version 2>/dev/null | awk '{print $3}' | sed 's/^go//')
+  say "Go detectado: ${GO_VERSION:-desconhecido} (mínimo ${GO_MIN_VERSION})"
+  if [[ -n "$GO_VERSION" ]] && ! version_ge "$GO_VERSION" "$GO_MIN_VERSION"; then
+    fatal "go ${GO_VERSION} < mínimo ${GO_MIN_VERSION}. Atualize: dnf module install go-toolset:rhel9 ou baixe de go.dev/dl/" 2
+  fi
+
+  # ---------- 1c. clone ou pull do repo ----------------------------------
+  say "Repositório: ${REPO_URL}  ref=${REPO_REF}  →  ${SRC_DIR}"
+  run mkdir -p "$(dirname "$SRC_DIR")"
+  if [[ -d "$SRC_DIR/.git" ]]; then
+    say "Repo já existe — atualizando."
+    run git -C "$SRC_DIR" fetch --tags --prune origin
+    run git -C "$SRC_DIR" reset --hard "origin/${REPO_REF}" 2>/dev/null \
+      || run git -C "$SRC_DIR" checkout "${REPO_REF}"
+  else
+    say "Clonando repo (esta é a primeira vez)…"
+    run git clone --depth 1 --branch "${REPO_REF}" "${REPO_URL}" "${SRC_DIR}" 2>/dev/null \
+      || run git clone "${REPO_URL}" "${SRC_DIR}"
+    run git -C "${SRC_DIR}" checkout "${REPO_REF}" 2>/dev/null || true
+  fi
+  COMMIT_SHA=$(git -C "${SRC_DIR}" rev-parse HEAD 2>/dev/null || echo unknown)
+  COMMIT_MSG=$(git -C "${SRC_DIR}" log -1 --oneline 2>/dev/null || echo unknown)
+  say "Commit em uso: ${COMMIT_SHA:0:12}  '${COMMIT_MSG}'"
+
+  # ---------- 1d. build ---------------------------------------------------
+  BUILD_OUT="${SRC_DIR}/bin/nsx-collector"
+  say "Build do binário em ${BUILD_OUT} (linux/amd64, CGO=0, stripped)…"
+  run mkdir -p "${SRC_DIR}/bin"
+  if [[ $DRY_RUN -eq 1 ]]; then
+    log "DRY-RUN: pularia o go build aqui (resultado simulado em ${BUILD_OUT})"
+  else
+    # Build isolado em SRC_DIR — NÃO toca em /home/nsx_collector.
+    if ! ( cd "${SRC_DIR}" && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
+             go build -trimpath -ldflags="-s -w" -o "${BUILD_OUT}" ./cmd/ ); then
+      fatal "go build FALHOU. Nada foi alterado em ${INSTALL_DIR}. Veja erros acima." 7
+    fi
+  fi
+  # Confirma binário gerado.
+  if [[ $DRY_RUN -eq 0 ]]; then
+    [[ -f "${BUILD_OUT}" ]] || fatal "build não produziu ${BUILD_OUT}" 7
+    BUILD_SHA=$(sha256sum "${BUILD_OUT}" | awk '{print $1}')
+    BUILD_SIZE=$(du -h "${BUILD_OUT}" | awk '{print $1}')
+    say "Build OK — ${BUILD_OUT} (${BUILD_SIZE}, sha256 ${BUILD_SHA:0:16}…)"
+  fi
+  BIN_SOURCE="${BUILD_OUT}"
+fi
+
 # ---------- 2. preflight ---------------------------------------------------
 say "Pré-checks…"
 
@@ -184,6 +297,10 @@ fi
   echo "service=$SERVICE"
   echo "install_dir=$INSTALL_DIR"
   echo "distro=$DISTRO"
+  echo "repo_url=${REPO_URL}"
+  echo "repo_ref=${REPO_REF}"
+  echo "commit_sha=${COMMIT_SHA:-skipped}"
+  echo "commit_msg=${COMMIT_MSG:-skipped}"
   systemctl is-active "$SERVICE" 2>/dev/null | sed 's/^/service_state_pre=/' || true
 } > "${BACKUP_DIR}/MANIFEST.txt"
 say "Backup pronto."
@@ -343,6 +460,9 @@ say "DEPLOY OK."
 say "Resumo:"
 say "  service:        $(systemctl is-active "$SERVICE")"
 say "  binário:        ${INSTALL_DIR}/nsx-collector  (sha256 ${NEW_SUM:0:12}…)"
+if [[ $SKIP_BUILD -ne 1 ]]; then
+  say "  fonte:          ${SRC_DIR}  (commit ${COMMIT_SHA:0:12} '${COMMIT_MSG:-}')"
+fi
 say "  backup deste:   ${BACKUP_DIR}"
 say "  log:            ${LOG_FILE}"
 say "  rollback:       sudo ROLLBACK_TO=${BACKUP_DIR} $0 --rollback"
