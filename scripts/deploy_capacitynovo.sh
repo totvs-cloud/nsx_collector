@@ -59,7 +59,11 @@ BACKUP_ROOT=${BACKUP_ROOT:-/home/nsx_collector/backups/capacity-novo}
 METRICS_URL=${METRICS_URL:-http://127.0.0.1:9101/metrics}
 DRY_RUN=${DRY_RUN:-0}
 SKIP_HEALTH=${SKIP_HEALTH:-0}
-HEALTH_TIMEOUT=${HEALTH_TIMEOUT:-60}      # segundos para validar /metrics + ciclos
+HEALTH_TIMEOUT=${HEALTH_TIMEOUT:-300}     # segundos para validar /metrics + ciclos
+                                          # default 300 porque o 1o cycle com a
+                                          # coleta nova (LB credits + Policy T0/T1
+                                          # + segments paginados) leva ~2-3 min em
+                                          # sites grandes (TESP2 = 2272 T1s).
 KEEP_BACKUPS=${KEEP_BACKUPS:-5}
 ROLLBACK_TO=${ROLLBACK_TO:-}              # quando --rollback é usado
 

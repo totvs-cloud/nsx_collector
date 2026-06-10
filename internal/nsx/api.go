@@ -3,6 +3,7 @@ package nsx
 import (
 	"context"
 	"fmt"
+	"net/url"
 )
 
 // GetClusterNodeStatus returns the appliance status of a specific cluster node
@@ -32,7 +33,7 @@ func (c *Client) GetTransportNodes(ctx context.Context) ([]TransportNodeItem, er
 	for {
 		path := "/api/v1/transport-nodes?page_size=100"
 		if cursor != "" {
-			path += "&cursor=" + cursor
+			path += "&cursor=" + url.QueryEscape(cursor)
 		}
 		var page TransportNodeList
 		if err := c.doGet(ctx, path, &page); err != nil {
@@ -63,7 +64,7 @@ func (c *Client) GetLogicalRouters(ctx context.Context) ([]LogicalRouter, error)
 	for {
 		path := "/api/v1/logical-routers?page_size=100"
 		if cursor != "" {
-			path += "&cursor=" + cursor
+			path += "&cursor=" + url.QueryEscape(cursor)
 		}
 		var page LogicalRouterList
 		if err := c.doGet(ctx, path, &page); err != nil {
@@ -98,7 +99,7 @@ func (c *Client) GetLogicalRouterPorts(ctx context.Context) ([]LogicalRouterPort
 	for {
 		path := "/api/v1/logical-router-ports?page_size=100"
 		if cursor != "" {
-			path += "&cursor=" + cursor
+			path += "&cursor=" + url.QueryEscape(cursor)
 		}
 		var page LogicalRouterPortList
 		if err := c.doGet(ctx, path, &page); err != nil {
@@ -159,7 +160,7 @@ func (c *Client) GetActiveAlarms(ctx context.Context) ([]Alarm, error) {
 	for {
 		path := "/api/v1/alarms?status=OPEN&page_size=100"
 		if cursor != "" {
-			path += "&cursor=" + cursor
+			path += "&cursor=" + url.QueryEscape(cursor)
 		}
 		var page AlarmList
 		if err := c.doGet(ctx, path, &page); err != nil {
@@ -185,7 +186,7 @@ func (c *Client) GetLBServices(ctx context.Context) ([]LBService, error) {
 	for {
 		path := "/api/v1/loadbalancer/services?page_size=100"
 		if cursor != "" {
-			path += "&cursor=" + cursor
+			path += "&cursor=" + url.QueryEscape(cursor)
 		}
 		var page LBServiceList
 		if err := c.doGet(ctx, path, &page); err != nil {
@@ -208,7 +209,7 @@ func (c *Client) GetLBVirtualServers(ctx context.Context) ([]LBVirtualServer, er
 	for {
 		path := "/api/v1/loadbalancer/virtual-servers?page_size=100"
 		if cursor != "" {
-			path += "&cursor=" + cursor
+			path += "&cursor=" + url.QueryEscape(cursor)
 		}
 		var page LBVirtualServerList
 		if err := c.doGet(ctx, path, &page); err != nil {
@@ -231,7 +232,7 @@ func (c *Client) GetLBPools(ctx context.Context) ([]LBPool, error) {
 	for {
 		path := "/api/v1/loadbalancer/pools?page_size=100"
 		if cursor != "" {
-			path += "&cursor=" + cursor
+			path += "&cursor=" + url.QueryEscape(cursor)
 		}
 		var page LBPoolList
 		if err := c.doGet(ctx, path, &page); err != nil {
@@ -284,7 +285,7 @@ func (c *Client) GetPolicyTier0s(ctx context.Context) ([]PolicyTier0, error) {
 	for {
 		path := "/policy/api/v1/infra/tier-0s?page_size=200"
 		if cursor != "" {
-			path += "&cursor=" + cursor
+			path += "&cursor=" + url.QueryEscape(cursor)
 		}
 		var page PolicyTier0List
 		if err := c.doGet(ctx, path, &page); err != nil {
@@ -307,7 +308,7 @@ func (c *Client) GetPolicyTier1s(ctx context.Context) ([]PolicyTier1, error) {
 	for {
 		path := "/policy/api/v1/infra/tier-1s?page_size=200"
 		if cursor != "" {
-			path += "&cursor=" + cursor
+			path += "&cursor=" + url.QueryEscape(cursor)
 		}
 		var page PolicyTier1List
 		if err := c.doGet(ctx, path, &page); err != nil {
@@ -330,7 +331,7 @@ func (c *Client) GetPolicySegments(ctx context.Context) ([]PolicySegment, error)
 	for {
 		path := "/policy/api/v1/infra/segments?page_size=500"
 		if cursor != "" {
-			path += "&cursor=" + cursor
+			path += "&cursor=" + url.QueryEscape(cursor)
 		}
 		var page PolicySegmentList
 		if err := c.doGet(ctx, path, &page); err != nil {
@@ -364,7 +365,7 @@ func (c *Client) GetGatewayPolicies(ctx context.Context) ([]PolicyGatewayPolicy,
 	for {
 		path := "/policy/api/v1/infra/domains/default/gateway-policies?include_rule_count=true&page_size=200"
 		if cursor != "" {
-			path += "&cursor=" + cursor
+			path += "&cursor=" + url.QueryEscape(cursor)
 		}
 		var page PolicyGatewayPolicyList
 		if err := c.doGet(ctx, path, &page); err != nil {
@@ -389,7 +390,7 @@ func (c *Client) GetPolicyEdgeClusters(ctx context.Context) ([]PolicyEdgeCluster
 	for {
 		path := "/policy/api/v1/infra/sites/default/enforcement-points/default/edge-clusters?page_size=100"
 		if cursor != "" {
-			path += "&cursor=" + cursor
+			path += "&cursor=" + url.QueryEscape(cursor)
 		}
 		var page PolicyEdgeClusterList
 		if err := c.doGet(ctx, path, &page); err != nil {
@@ -412,7 +413,7 @@ func (c *Client) GetPolicyGroups(ctx context.Context) ([]PolicyGroup, error) {
 	for {
 		path := "/policy/api/v1/infra/domains/default/groups?page_size=500"
 		if cursor != "" {
-			path += "&cursor=" + cursor
+			path += "&cursor=" + url.QueryEscape(cursor)
 		}
 		var page PolicyGroupList
 		if err := c.doGet(ctx, path, &page); err != nil {
