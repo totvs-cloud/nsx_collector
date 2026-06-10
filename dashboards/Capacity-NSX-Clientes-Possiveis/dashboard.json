@@ -97,7 +97,7 @@
     {
       "id": 2,
       "type": "bargauge",
-      "title": "🎯 Quanto cabe HOJE em cada candidato (TESP7 fora — está saturado)",
+      "title": "🎯 Clientes Possíveis HOJE em cada edge (todos os 5 — TESP7 incluído p/ ver o quanto está estourado)",
       "datasource": {
         "type": "influxdb",
         "uid": "efcqeppjazvgga"
@@ -106,7 +106,7 @@
         "x": 0,
         "y": 1,
         "w": 24,
-        "h": 7
+        "h": 8
       },
       "targets": [
         {
@@ -114,7 +114,7 @@
             "type": "influxdb",
             "uid": "efcqeppjazvgga"
           },
-          "query": "import \"math\"\n\nsites_re = /^(TESP2|TESP3|TESP5|TESP6)$/\n\nper_ind = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site =~ sites_re)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> pivot(rowKey: [\"site\",\"usage_type\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nt1_per_site = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site =~ sites_re)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> keep(columns: [\"site\",\"_value\"])\n  |> rename(columns: {_value: \"atual_t1\"})\n\njoin(tables: {a: per_ind, b: t1_per_site}, on: [\"site\"])\n  |> map(fn: (r) => ({r with cp: (if r.current_usage > 0.0 then (r.max_supported * r.atual_t1 / r.current_usage) - r.atual_t1 else 0.0)}))\n  |> group(columns: [\"site\"])\n  |> min(column: \"cp\")\n  |> group()\n  |> sort(columns: [\"cp\"], desc: true)\n  |> keep(columns: [\"site\",\"cp\"])\n  |> rename(columns: {cp: \"_value\", site: \"_field\"})",
+          "query": "import \"math\"\n\nsites_re = /^(TESP2|TESP3|TESP5|TESP6|TESP7)$/\n\nper_ind = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site =~ sites_re)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> pivot(rowKey: [\"site\",\"usage_type\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nt1_per_site = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site =~ sites_re)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> keep(columns: [\"site\",\"_value\"])\n  |> rename(columns: {_value: \"atual_t1\"})\n\njoin(tables: {a: per_ind, b: t1_per_site}, on: [\"site\"])\n  |> map(fn: (r) => ({r with cp: (if r.current_usage > 0.0 then (r.max_supported * r.atual_t1 / r.current_usage) - r.atual_t1 else 0.0)}))\n  |> group(columns: [\"site\"])\n  |> min(column: \"cp\")\n  |> group()\n  |> sort(columns: [\"cp\"], desc: true)\n  |> keep(columns: [\"site\",\"cp\"])\n  |> rename(columns: {cp: \"_value\", site: \"_field\"})",
           "refId": "A",
           "hide": false
         }
@@ -167,7 +167,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 8,
+        "y": 9,
         "w": 24,
         "h": 9
       },
@@ -223,7 +223,7 @@
       "title": "━━━ TESP2 ━━━  (T1 Alvo = ${alvo_tesp2})",
       "gridPos": {
         "x": 0,
-        "y": 17,
+        "y": 18,
         "w": 24,
         "h": 1
       },
@@ -240,7 +240,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 18,
+        "y": 19,
         "w": 6,
         "h": 6
       },
@@ -305,7 +305,7 @@
       },
       "gridPos": {
         "x": 6,
-        "y": 18,
+        "y": 19,
         "w": 6,
         "h": 6
       },
@@ -349,7 +349,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 18,
+        "y": 19,
         "w": 6,
         "h": 6
       },
@@ -416,7 +416,7 @@
       },
       "gridPos": {
         "x": 18,
-        "y": 18,
+        "y": 19,
         "w": 6,
         "h": 6
       },
@@ -460,7 +460,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 24,
+        "y": 25,
         "w": 24,
         "h": 9
       },
@@ -488,7 +488,7 @@
       "title": "━━━ TESP3 ━━━  (T1 Alvo = ${alvo_tesp3})",
       "gridPos": {
         "x": 0,
-        "y": 33,
+        "y": 34,
         "w": 24,
         "h": 1
       },
@@ -505,7 +505,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 34,
+        "y": 35,
         "w": 6,
         "h": 6
       },
@@ -570,7 +570,7 @@
       },
       "gridPos": {
         "x": 6,
-        "y": 34,
+        "y": 35,
         "w": 6,
         "h": 6
       },
@@ -614,7 +614,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 34,
+        "y": 35,
         "w": 6,
         "h": 6
       },
@@ -681,7 +681,7 @@
       },
       "gridPos": {
         "x": 18,
-        "y": 34,
+        "y": 35,
         "w": 6,
         "h": 6
       },
@@ -725,7 +725,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 40,
+        "y": 41,
         "w": 24,
         "h": 9
       },
@@ -753,7 +753,7 @@
       "title": "━━━ TESP5 ━━━  (T1 Alvo = ${alvo_tesp5})",
       "gridPos": {
         "x": 0,
-        "y": 49,
+        "y": 50,
         "w": 24,
         "h": 1
       },
@@ -770,7 +770,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 50,
+        "y": 51,
         "w": 6,
         "h": 6
       },
@@ -835,7 +835,7 @@
       },
       "gridPos": {
         "x": 6,
-        "y": 50,
+        "y": 51,
         "w": 6,
         "h": 6
       },
@@ -879,7 +879,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 50,
+        "y": 51,
         "w": 6,
         "h": 6
       },
@@ -946,7 +946,7 @@
       },
       "gridPos": {
         "x": 18,
-        "y": 50,
+        "y": 51,
         "w": 6,
         "h": 6
       },
@@ -990,7 +990,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 56,
+        "y": 57,
         "w": 24,
         "h": 9
       },
@@ -1018,7 +1018,7 @@
       "title": "━━━ TESP6 ━━━  (T1 Alvo = ${alvo_tesp6})",
       "gridPos": {
         "x": 0,
-        "y": 65,
+        "y": 66,
         "w": 24,
         "h": 1
       },
@@ -1035,7 +1035,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 66,
+        "y": 67,
         "w": 6,
         "h": 6
       },
@@ -1100,7 +1100,7 @@
       },
       "gridPos": {
         "x": 6,
-        "y": 66,
+        "y": 67,
         "w": 6,
         "h": 6
       },
@@ -1144,7 +1144,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 66,
+        "y": 67,
         "w": 6,
         "h": 6
       },
@@ -1211,7 +1211,7 @@
       },
       "gridPos": {
         "x": 18,
-        "y": 66,
+        "y": 67,
         "w": 6,
         "h": 6
       },
@@ -1255,7 +1255,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 72,
+        "y": 73,
         "w": 24,
         "h": 9
       },
@@ -1283,7 +1283,7 @@
       "title": "━━━ TESP7 ━━━  (T1 Alvo = ${alvo_tesp7})",
       "gridPos": {
         "x": 0,
-        "y": 81,
+        "y": 82,
         "w": 24,
         "h": 1
       },
@@ -1300,7 +1300,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 82,
+        "y": 83,
         "w": 6,
         "h": 6
       },
@@ -1365,7 +1365,7 @@
       },
       "gridPos": {
         "x": 6,
-        "y": 82,
+        "y": 83,
         "w": 6,
         "h": 6
       },
@@ -1409,7 +1409,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 82,
+        "y": 83,
         "w": 6,
         "h": 6
       },
@@ -1476,7 +1476,7 @@
       },
       "gridPos": {
         "x": 18,
-        "y": 82,
+        "y": 83,
         "w": 6,
         "h": 6
       },
@@ -1520,7 +1520,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 88,
+        "y": 89,
         "w": 24,
         "h": 9
       },
