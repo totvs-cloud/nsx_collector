@@ -16,10 +16,45 @@ type Config struct {
 	Telemetry       TelemetryConfig             `yaml:"telemetry"`
 	Intervals       IntervalConfig              `yaml:"intervals"`
 	Slack           SlackConfig                 `yaml:"slack"`
+	T1Watch         T1WatchConfig               `yaml:"t1_watch"`
+	Capacity        CapacityConfig              `yaml:"capacity"`
 	// InterfaceSpeeds overrides link_speed_mbps for interfaces where the NSX API
 	// returns 0 (common for DPDK/fastpath fp-* interfaces on bare-metal Edge nodes).
 	// Format: node_name -> interface_id -> speed in Mbps.
 	InterfaceSpeeds map[string]map[string]int64 `yaml:"interface_speed_overrides"`
+}
+
+// T1WatchConfig controls the "new T1 detected" Slack bot.
+// The detector runs every collector cycle against the persisted snapshot and
+// emits one Slack message per newly observed T1.
+type T1WatchConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	// SlackChannel overrides slack.channel for T1 events (so you can route
+	// capacity events to a different channel than bandwidth alerts).
+	SlackChannel       string            `yaml:"slack_channel"`
+	StateDir           string            `yaml:"state_dir"`
+	VRFT1LimitDefault  int64             `yaml:"vrf_t1_limit_default"`
+	T0T1LimitDefault   int64             `yaml:"t0_t1_limit_default"`
+	VRFT1Limits        map[string]int64  `yaml:"vrf_t1_limits"`
+	T0T1Limits         map[string]int64  `yaml:"t0_t1_limits"`
+}
+
+// CapacityConfig controls extended Capacity NSX collection (segments, NAT
+// per T1, gateway-policies per T1, groups inventory). When extras are off we
+// still collect /capacity/usage, LB credits, T1-per-VRF and T1-per-T0.
+type CapacityConfig struct {
+	// CollectSegments runs the segments inventory at slow cadence (for B3/D1).
+	CollectSegments bool `yaml:"collect_segments"`
+	// CollectNATPerT1 fetches /tier-1s/{id}/nat/USER/nat-rules?page_size=1 per T1.
+	// On TESP3 (2272 T1s) this means ~2272 extra requests per slow cycle (5min);
+	// paced by NATPerT1PaceMS to avoid rate-limits.
+	CollectNATPerT1   bool `yaml:"collect_nat_per_t1"`
+	NATPerT1PaceMS   int `yaml:"nat_per_t1_pace_ms"`
+	NATPerT1Parallel int `yaml:"nat_per_t1_parallel"`
+	// CollectGWPolicies runs gateway-policies?include_rule_count=true (B4).
+	CollectGWPolicies bool `yaml:"collect_gw_policies"`
+	// CollectGroups runs the groups inventory at slow cadence (D2).
+	CollectGroups bool `yaml:"collect_groups"`
 }
 
 // SlackConfig holds Slack alerting settings.
@@ -126,5 +161,20 @@ func (c *Config) setDefaults() {
 	}
 	if c.Intervals.HA == 0 {
 		c.Intervals.HA = 1 * time.Minute
+	}
+	if c.T1Watch.StateDir == "" {
+		c.T1Watch.StateDir = "/home/nsx_collector/state"
+	}
+	if c.T1Watch.VRFT1LimitDefault == 0 {
+		c.T1Watch.VRFT1LimitDefault = 200
+	}
+	if c.T1Watch.T0T1LimitDefault == 0 {
+		c.T1Watch.T0T1LimitDefault = 1000
+	}
+	if c.Capacity.NATPerT1PaceMS == 0 {
+		c.Capacity.NATPerT1PaceMS = 30 // 30ms × 2272 T1s = ~68s per slow cycle on TESP3
+	}
+	if c.Capacity.NATPerT1Parallel == 0 {
+		c.Capacity.NATPerT1Parallel = 4
 	}
 }

@@ -28,6 +28,28 @@ slack:
   rx_util_panel_id: "5"
   tx_util_panel_id: "6"  # ajustar para o panelId real do painel TX Utilization
 
+# Detector de criação de T1 -> Slack bot
+# Roda a cada ciclo do collector (40s); usa snapshot persistido para diff.
+# O primeiro ciclo (snapshot vazio) NAO emite eventos -- so baseline.
+t1_watch:
+  enabled: false                          # ligar apos validar baseline
+  slack_channel: ""                       # vazio = usa slack.channel
+  state_dir: "/home/nsx_collector/state"
+  vrf_t1_limit_default: 200
+  t0_t1_limit_default: 1000
+  vrf_t1_limits: {}                       # override por VRF: { "VRF-PROD-X": 300 }
+  t0_t1_limits: {}                        # override por T0: { "T0-Cluster_1": 1500 }
+
+# Cobertura estendida do painel Capacity NSX.
+# Liga/desliga coletas que custam chamadas por T1 (segments, NAT, FW).
+capacity:
+  collect_segments: true                  # inventário para "segments por VRF/T0" (~1-2 req)
+  collect_gw_policies: true               # gateway-policies?include_rule_count=true (~1-3 req)
+  collect_groups: true                    # inventário de groups + flag de vazios (~1-2 req)
+  collect_nat_per_t1: false               # caro: 1 req por T1 (~2272 reqs no TESP3). Ligar com cuidado.
+  nat_per_t1_pace_ms: 30                  # espaçamento entre requests para evitar 429
+  nat_per_t1_parallel: 4                  # workers paralelos para coletas por T1
+
 # Overrides de velocidade para interfaces onde a API NSX retorna link_speed = 0
 # (comum em interfaces DPDK/fastpath fp-* em Edge nodes bare-metal).
 # Formato: node_name -> interface_id -> velocidade em Mbps.

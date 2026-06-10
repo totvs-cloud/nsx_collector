@@ -545,3 +545,382 @@ func EdgeUplinkRatePoint(site, nodeID, nodeName, ifaceID string, rxBps, txBps, r
 		now,
 	)
 }
+
+// ---------------------------------------------------------------------------
+// LB credits (Policy API) — feeds the "LB credits" section of Capacity-NSX
+// ---------------------------------------------------------------------------
+
+// lbSeverityNum converts NSX LB severity strings (GREEN/ORANGE/RED) to a sortable
+// integer for Grafana color thresholds. Distinct from the alarm severityNum
+// scale (CRITICAL/HIGH/MEDIUM/LOW), which uses higher numbers for worse states
+// — here we keep the same direction (higher = worse) but for a different domain.
+func lbSeverityNum(s string) int64 {
+	switch strings.ToUpper(strings.TrimSpace(s)) {
+	case "RED":
+		return 3
+	case "ORANGE":
+		return 2
+	case "GREEN":
+		return 1
+	}
+	return 0
+}
+
+// LBCreditsManagerPoint records the manager-wide LB credit aggregate.
+// measurement: nsx_lb_credits
+// tags: site, scope=manager
+// fields: used_credits, credit_capacity, available_credits, usage_pct,
+//         severity_num, pool_members_used, pool_members_capacity,
+//         nodes_green, nodes_orange, nodes_red
+func LBCreditsManagerPoint(site string, s *nsx.LBNodeUsageSummary, now time.Time) *write.Point {
+	var green, orange, red int64
+	for _, nc := range s.NodeCounts {
+		switch strings.ToUpper(strings.TrimSpace(nc.Severity)) {
+		case "GREEN":
+			green = int64(nc.NodeCount)
+		case "ORANGE":
+			orange = int64(nc.NodeCount)
+		case "RED":
+			red = int64(nc.NodeCount)
+		}
+	}
+	avail := s.CreditCapacity - s.CurrentCredits
+	if avail < 0 {
+		avail = 0
+	}
+	return influxdb2.NewPoint(
+		"nsx_lb_credits",
+		map[string]string{
+			"site":  site,
+			"scope": "manager",
+		},
+		map[string]interface{}{
+			"used_credits":          s.CurrentCredits,
+			"credit_capacity":       s.CreditCapacity,
+			"available_credits":     avail,
+			"usage_pct":             s.UsagePercentage,
+			"severity_num":          lbSeverityNum(s.Severity),
+			"pool_members_used":     s.CurrentPoolMembers,
+			"pool_members_capacity": s.PoolMemberCapacity,
+			"nodes_green":           green,
+			"nodes_orange":          orange,
+			"nodes_red":             red,
+		},
+		now,
+	)
+}
+
+// LBCreditsNodePoint records LB consumption for one edge node.
+// measurement: nsx_lb_credits
+// tags: site, scope=edge_node, node_id, edge_cluster_id, form_factor
+// fields: used_credits, credit_capacity, available_credits, usage_pct,
+//         severity_num, pool_members_used, virtual_servers, pools, pool_members_capacity,
+//         small/medium/large/xlarge counts (current + remaining)
+func LBCreditsNodePoint(site string, n *nsx.LBNodeUsage, now time.Time) *write.Point {
+	nodeID := nsx.LastPathSegment(n.NodePath)
+	edgeClusterID := nsx.LastPathSegment(n.EdgeClusterPath)
+	if nodeID == "" {
+		nodeID = "-"
+	}
+	if edgeClusterID == "" {
+		edgeClusterID = "-"
+	}
+	formFactor := n.FormFactor
+	if formFactor == "" {
+		formFactor = "-"
+	}
+	avail := n.CreditCapacity - n.CurrentCredits
+	if avail < 0 {
+		avail = 0
+	}
+	return influxdb2.NewPoint(
+		"nsx_lb_credits",
+		map[string]string{
+			"site":            site,
+			"scope":           "edge_node",
+			"node_id":         nodeID,
+			"edge_cluster_id": edgeClusterID,
+			"form_factor":     formFactor,
+		},
+		map[string]interface{}{
+			"used_credits":           n.CurrentCredits,
+			"credit_capacity":        n.CreditCapacity,
+			"available_credits":      avail,
+			"usage_pct":              n.UsagePercentage,
+			"severity_num":           lbSeverityNum(n.Severity),
+			"pool_members_used":      n.CurrentPoolMembers,
+			"virtual_servers":        n.CurrentVirtualServers,
+			"pools":                  n.CurrentPools,
+			"pool_members_capacity":  n.PoolMemberCapacity,
+			"small_lb_count":         n.CurrentSmall,
+			"medium_lb_count":        n.CurrentMedium,
+			"large_lb_count":         n.CurrentLarge,
+			"xlarge_lb_count":        n.CurrentXLarge,
+			"small_lb_remaining":     n.RemainingSmall,
+			"medium_lb_remaining":    n.RemainingMedium,
+			"large_lb_remaining":     n.RemainingLarge,
+			"xlarge_lb_remaining":    n.RemainingXLarge,
+		},
+		now,
+	)
+}
+
+// ---------------------------------------------------------------------------
+// T1 aggregation per VRF / per T0 — fed by Policy API tier-1 inventory
+// ---------------------------------------------------------------------------
+
+// T1PerVRFPoint records the number of T1s under one VRF (T0 with vrf_config),
+// along with the configured soft limit and computed usage_pct.
+// measurement: nsx_t1_per_vrf
+// tags: site, vrf_name, vrf_id, t0_parent
+// fields: t1_count, limit, usage_pct, available
+func T1PerVRFPoint(site, vrfName, vrfID, t0ParentName string, t1Count, limit int64, now time.Time) *write.Point {
+	if vrfName == "" {
+		vrfName = "-"
+	}
+	if vrfID == "" {
+		vrfID = "-"
+	}
+	if t0ParentName == "" {
+		t0ParentName = "-"
+	}
+	avail := limit - t1Count
+	if avail < 0 {
+		avail = 0
+	}
+	var pct float64
+	if limit > 0 {
+		pct = float64(t1Count) / float64(limit) * 100
+	}
+	return influxdb2.NewPoint(
+		"nsx_t1_per_vrf",
+		map[string]string{
+			"site":      site,
+			"vrf_name":  vrfName,
+			"vrf_id":    vrfID,
+			"t0_parent": t0ParentName,
+		},
+		map[string]interface{}{
+			"t1_count":  t1Count,
+			"limit":     limit,
+			"usage_pct": pct,
+			"available": avail,
+		},
+		now,
+	)
+}
+
+// T1PerT0Point records the number of T1s directly attached to one T0 (non-VRF).
+// measurement: nsx_t1_per_t0
+// tags: site, t0_name, t0_id
+// fields: t1_count, limit, usage_pct, available
+func T1PerT0Point(site, t0Name, t0ID string, t1Count, limit int64, now time.Time) *write.Point {
+	if t0Name == "" {
+		t0Name = "-"
+	}
+	if t0ID == "" {
+		t0ID = "-"
+	}
+	avail := limit - t1Count
+	if avail < 0 {
+		avail = 0
+	}
+	var pct float64
+	if limit > 0 {
+		pct = float64(t1Count) / float64(limit) * 100
+	}
+	return influxdb2.NewPoint(
+		"nsx_t1_per_t0",
+		map[string]string{
+			"site":   site,
+			"t0_name": t0Name,
+			"t0_id":   t0ID,
+		},
+		map[string]interface{}{
+			"t1_count":  t1Count,
+			"limit":     limit,
+			"usage_pct": pct,
+			"available": avail,
+		},
+		now,
+	)
+}
+
+// ---------------------------------------------------------------------------
+// Segments aggregation per VRF / per T0 — fed by Policy API segments
+// ---------------------------------------------------------------------------
+
+// SegmentsPerParentPoint records segment counts grouped by parent (T1 or VRF or T0).
+// measurement: nsx_segments_per_parent
+// tags: site, parent_kind=t1|vrf|t0|overlay, parent_name, parent_id
+// fields: segment_count
+func SegmentsPerParentPoint(site, parentKind, parentName, parentID string, count int64, now time.Time) *write.Point {
+	if parentName == "" {
+		parentName = "-"
+	}
+	if parentID == "" {
+		parentID = "-"
+	}
+	return influxdb2.NewPoint(
+		"nsx_segments_per_parent",
+		map[string]string{
+			"site":        site,
+			"parent_kind": parentKind,
+			"parent_name": parentName,
+			"parent_id":   parentID,
+		},
+		map[string]interface{}{
+			"segment_count": count,
+		},
+		now,
+	)
+}
+
+// ---------------------------------------------------------------------------
+// NAT rules per T1 / per VRF
+// ---------------------------------------------------------------------------
+
+// NATPerT1Point records the NAT rule count of one Tier-1.
+// measurement: nsx_nat_per_t1
+// tags: site, t1_id, t1_name, parent_kind=vrf|t0, parent_name
+// fields: nat_rules
+func NATPerT1Point(site, t1ID, t1Name, parentKind, parentName string, count int64, now time.Time) *write.Point {
+	if t1Name == "" {
+		t1Name = "-"
+	}
+	if parentKind == "" {
+		parentKind = "-"
+	}
+	if parentName == "" {
+		parentName = "-"
+	}
+	return influxdb2.NewPoint(
+		"nsx_nat_per_t1",
+		map[string]string{
+			"site":        site,
+			"t1_id":       t1ID,
+			"t1_name":     t1Name,
+			"parent_kind": parentKind,
+			"parent_name": parentName,
+		},
+		map[string]interface{}{
+			"nat_rules": count,
+		},
+		now,
+	)
+}
+
+// ---------------------------------------------------------------------------
+// Gateway firewall rules per T1 / per VRF
+// ---------------------------------------------------------------------------
+
+// FWPerGatewayPoint records the firewall rule count attributed to one gateway
+// (T1 or T0/VRF) via gateway-policies.scope. One series per (scope_path).
+// measurement: nsx_fw_per_gateway
+// tags: site, gateway_kind=t1|vrf|t0, gateway_name, gateway_id
+// fields: fw_rules, fw_policies
+func FWPerGatewayPoint(site, gatewayKind, gatewayName, gatewayID string, ruleCount, policyCount int64, now time.Time) *write.Point {
+	if gatewayName == "" {
+		gatewayName = "-"
+	}
+	if gatewayID == "" {
+		gatewayID = "-"
+	}
+	return influxdb2.NewPoint(
+		"nsx_fw_per_gateway",
+		map[string]string{
+			"site":         site,
+			"gateway_kind": gatewayKind,
+			"gateway_name": gatewayName,
+			"gateway_id":   gatewayID,
+		},
+		map[string]interface{}{
+			"fw_rules":    ruleCount,
+			"fw_policies": policyCount,
+		},
+		now,
+	)
+}
+
+// ---------------------------------------------------------------------------
+// Groups inventory (for waste/orphan analysis) — fed by Policy API groups
+// ---------------------------------------------------------------------------
+
+// GroupsInventoryPoint records the total + orphan groups (no expression).
+// measurement: nsx_groups_inventory
+// tags: site
+// fields: total, empty (no expression), with_expression
+func GroupsInventoryPoint(site string, total, empty int64, now time.Time) *write.Point {
+	withExpr := total - empty
+	if withExpr < 0 {
+		withExpr = 0
+	}
+	return influxdb2.NewPoint(
+		"nsx_groups_inventory",
+		map[string]string{"site": site},
+		map[string]interface{}{
+			"total":           total,
+			"empty":           empty,
+			"with_expression": withExpr,
+		},
+		now,
+	)
+}
+
+// ---------------------------------------------------------------------------
+// T1 lifecycle events (create / delete) — fed by t1watch detector
+// ---------------------------------------------------------------------------
+
+// T1EventPoint records one T1 lifecycle event detected by the t1watch
+// diff between consecutive collection cycles.
+// measurement: nsx_t1_event
+// tags: site, event=created|deleted, t1_id, t1_name, vrf_name, edge_cluster_name
+// fields: vrf_t1_count (post-event), vrf_limit, site_t1_total, count=1
+func T1EventPoint(site, event, t1ID, t1Name, vrfName, edgeClusterName string, vrfT1Count, vrfLimit, siteT1Total int64, now time.Time) *write.Point {
+	if t1Name == "" {
+		t1Name = "-"
+	}
+	if vrfName == "" {
+		vrfName = "-"
+	}
+	if edgeClusterName == "" {
+		edgeClusterName = "-"
+	}
+	return influxdb2.NewPoint(
+		"nsx_t1_event",
+		map[string]string{
+			"site":              site,
+			"event":             event,
+			"t1_id":             t1ID,
+			"t1_name":           t1Name,
+			"vrf_name":          vrfName,
+			"edge_cluster_name": edgeClusterName,
+		},
+		map[string]interface{}{
+			"count":         int64(1),
+			"vrf_t1_count":  vrfT1Count,
+			"vrf_limit":     vrfLimit,
+			"site_t1_total": siteT1Total,
+		},
+		now,
+	)
+}
+
+// SiteT1TotalsPoint records the site-level T1 inventory snapshot per cycle.
+// Used by Grafana stat panels and by the t1watch notifier output ("de um total
+// de XXXX t1 no <site>"). Lower cost than scanning nsx_logical_router for sums.
+// measurement: nsx_t1_totals
+// tags: site
+// fields: total, on_vrf, on_t0
+func SiteT1TotalsPoint(site string, total, onVRF, onT0 int64, now time.Time) *write.Point {
+	return influxdb2.NewPoint(
+		"nsx_t1_totals",
+		map[string]string{"site": site},
+		map[string]interface{}{
+			"total":  total,
+			"on_vrf": onVRF,
+			"on_t0":  onT0,
+		},
+		now,
+	)
+}

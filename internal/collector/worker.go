@@ -26,6 +26,7 @@ type Worker struct {
 	haInterval      time.Duration
 	lastHA          time.Time
 	haCollector     *HACollector
+	capacityCol     *CapacityCollector
 	// speedOverrides maps node_name -> interface_id -> speed_mbps.
 	// Used to override link_speed when the NSX API returns 0 (fp-* DPDK interfaces).
 	speedOverrides  map[string]map[string]int64
@@ -34,7 +35,16 @@ type Worker struct {
 }
 
 // NewWorker creates a new collector worker for the given manager.
-func NewWorker(mgr config.Manager, writer *influxpkg.Writer, intervals config.IntervalConfig, speedOverrides map[string]map[string]int64, rateCalc *RateCalculator, alertEval *alerting.Evaluator) *Worker {
+// capacityCol may be nil — when nil, the worker skips Capacity NSX extras.
+func NewWorker(
+	mgr config.Manager,
+	writer *influxpkg.Writer,
+	intervals config.IntervalConfig,
+	speedOverrides map[string]map[string]int64,
+	rateCalc *RateCalculator,
+	alertEval *alerting.Evaluator,
+	capacityCol *CapacityCollector,
+) *Worker {
 	client := nsx.NewClient(mgr.URL, mgr.Username, mgr.Password, mgr.TLSSkipVerify)
 	logger := zap.L().Named(mgr.Site)
 	return &Worker{
@@ -45,11 +55,20 @@ func NewWorker(mgr config.Manager, writer *influxpkg.Writer, intervals config.In
 		slowInterval:   intervals.Slow,
 		haInterval:     intervals.HA,
 		haCollector:    NewHACollector(mgr, client, logger.Named("ha")),
+		capacityCol:    capacityCol,
 		speedOverrides: speedOverrides,
 		rateCalc:       rateCalc,
 		alertEval:      alertEval,
 	}
 }
+
+// Client returns the worker's NSX client. Useful for callers that need to
+// inject capacity collectors after construction (when client comes from worker).
+func (w *Worker) Client() *nsx.Client { return w.client }
+
+// SetCapacityCollector lets main.go attach the capacity collector after the
+// worker is built (since the capacity collector needs the worker's client).
+func (w *Worker) SetCapacityCollector(c *CapacityCollector) { w.capacityCol = c }
 
 // Collect runs a full collection cycle for this manager.
 func (w *Worker) Collect(ctx context.Context) {
@@ -248,6 +267,15 @@ func (w *Worker) Collect(ctx context.Context) {
 				capacityPoints = append(capacityPoints, influxpkg.CapacityPoint(site, &capacities[i], now))
 			}
 			logger.Debug("capacity collected", zap.Int("count", len(capacities)))
+		}
+
+		// 5b. Capacity NSX extras: LB credits, T1-per-VRF/T0, segments,
+		// gateway FW per gateway, groups inventory, NAT-per-T1 (when on),
+		// and the t1watch new-T1 detector + Slack notifier.
+		if w.capacityCol != nil {
+			cp, p := w.capacityCol.Collect(ctx, now)
+			capacityPoints = append(capacityPoints, cp...)
+			points = append(points, p...)
 		}
 
 		// 6. NS Services count — written to capacity bucket

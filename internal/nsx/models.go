@@ -324,3 +324,203 @@ type LBMemberStatus struct {
 	Port      string `json:"port"`
 	Status    string `json:"status"` // UP | DOWN | DISABLED | GRACEFUL_DISABLED
 }
+
+// ---------------------------------------------------------------------------
+// LB Node Usage Summary (Policy API)
+// GET /policy/api/v1/infra/lb-node-usage-summary?include_usages=true
+// ---------------------------------------------------------------------------
+
+// LBNodeUsageSummaryResponse wraps the results array of the LB usage summary.
+type LBNodeUsageSummaryResponse struct {
+	Results []LBNodeUsageSummary `json:"results"`
+}
+
+// LBNodeUsageSummary is the manager-wide aggregate plus per-edge-node detail.
+type LBNodeUsageSummary struct {
+	CurrentCredits      int64                  `json:"current_load_balancer_credits"`
+	CreditCapacity      int64                  `json:"load_balancer_credit_capacity"`
+	UsagePercentage     float64                `json:"usage_percentage"`
+	Severity            string                 `json:"severity"` // GREEN | ORANGE | RED
+	CurrentPoolMembers  int64                  `json:"current_pool_member_count"`
+	PoolMemberCapacity  int64                  `json:"pool_member_capacity"`
+	NodeCounts          []LBNodeSeverityCount  `json:"node_counts"`
+	NodeUsages          []LBNodeUsage          `json:"node_usages"`
+}
+
+// LBNodeSeverityCount carries the number of edge nodes per severity bucket.
+type LBNodeSeverityCount struct {
+	Severity  string `json:"severity"` // GREEN | ORANGE | RED
+	NodeCount int    `json:"node_count"`
+}
+
+// LBNodeUsage is one edge node's LB consumption snapshot.
+type LBNodeUsage struct {
+	FormFactor              string  `json:"form_factor"`        // VIRTUAL_MACHINE | PHYSICAL_MACHINE
+	EdgeClusterPath         string  `json:"edge_cluster_path"`
+	NodePath                string  `json:"node_path"`
+	CurrentCredits          int64   `json:"current_load_balancer_credits"`
+	CreditCapacity          int64   `json:"load_balancer_credit_capacity"`
+	UsagePercentage         float64 `json:"usage_percentage"`
+	Severity                string  `json:"severity"`
+	CurrentPoolMembers      int64   `json:"current_pool_member_count"`
+	CurrentVirtualServers   int64   `json:"current_virtual_server_count"`
+	CurrentPools            int64   `json:"current_pool_count"`
+	PoolMemberCapacity      int64   `json:"pool_member_capacity"`
+	CurrentSmall            int64   `json:"current_small_load_balancer_count"`
+	CurrentMedium           int64   `json:"current_medium_load_balancer_count"`
+	CurrentLarge            int64   `json:"current_large_load_balancer_count"`
+	CurrentXLarge           int64   `json:"current_xlarge_load_balancer_count"`
+	RemainingSmall          int64   `json:"remaining_small_load_balancer_count"`
+	RemainingMedium         int64   `json:"remaining_medium_load_balancer_count"`
+	RemainingLarge          int64   `json:"remaining_large_load_balancer_count"`
+	RemainingXLarge         int64   `json:"remaining_xlarge_load_balancer_count"`
+}
+
+// LastPathSegment returns the trailing UUID/identifier from a Policy API path
+// (e.g. ".../edge-clusters/abc-123" → "abc-123").
+func LastPathSegment(p string) string {
+	for i := len(p) - 1; i >= 0; i-- {
+		if p[i] == '/' {
+			return p[i+1:]
+		}
+	}
+	return p
+}
+
+// ---------------------------------------------------------------------------
+// Policy API — Tier-0 / Tier-1 / Segments
+// Distinguishes VRFs (T0 with vrf_config) from regular T0s.
+// ---------------------------------------------------------------------------
+
+// PolicyTier0List represents GET /policy/api/v1/infra/tier-0s
+type PolicyTier0List struct {
+	ResultCount int           `json:"result_count"`
+	Cursor      string        `json:"cursor"`
+	Results     []PolicyTier0 `json:"results"`
+}
+
+// PolicyTier0 carries enough to detect VRFs and resolve display names.
+// VRFConfig is left as RawMessage — we only need to know if it's set.
+type PolicyTier0 struct {
+	ID          string          `json:"id"`
+	DisplayName string          `json:"display_name"`
+	Path        string          `json:"path"`         // /infra/tier-0s/<id>
+	UniqueID    string          `json:"unique_id"`    // matches legacy logical-router UUID
+	VRFConfig   json.RawMessage `json:"vrf_config,omitempty"`
+}
+
+// IsVRF returns true when the T0 is a VRF gateway (has vrf_config set).
+func (t *PolicyTier0) IsVRF() bool { return len(t.VRFConfig) > 0 }
+
+// PolicyTier1List represents GET /policy/api/v1/infra/tier-1s
+type PolicyTier1List struct {
+	ResultCount int           `json:"result_count"`
+	Cursor      string        `json:"cursor"`
+	Results     []PolicyTier1 `json:"results"`
+}
+
+// PolicyTier1 carries the link to its parent T0 (or VRF), plus identifiers
+// needed to cross-reference with the legacy logical-routers list.
+type PolicyTier1 struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name"`
+	Path        string `json:"path"`
+	Tier0Path   string `json:"tier0_path"`   // /infra/tier-0s/<t0_or_vrf_id>
+	UniqueID    string `json:"unique_id"`    // matches legacy logical-router UUID
+	CreateTime  int64  `json:"_create_time"` // epoch ms — used to detect freshness
+	CreateUser  string `json:"_create_user"`
+}
+
+// PolicySegmentList represents GET /policy/api/v1/infra/segments
+type PolicySegmentList struct {
+	ResultCount int             `json:"result_count"`
+	Cursor      string          `json:"cursor"`
+	Results     []PolicySegment `json:"results"`
+}
+
+// PolicySegment carries connectivity (tier-1 or tier-0 path) for per-tenant aggregation.
+type PolicySegment struct {
+	ID               string `json:"id"`
+	DisplayName      string `json:"display_name"`
+	Path             string `json:"path"`
+	ConnectivityPath string `json:"connectivity_path,omitempty"` // /infra/tier-1s/<id> or /infra/tier-0s/<id>
+}
+
+// ---------------------------------------------------------------------------
+// Policy API — NAT rules per Tier-1
+// GET /policy/api/v1/infra/tier-1s/{id}/nat/{policy}/nat-rules
+// Or aggregated:
+// GET /policy/api/v1/infra/tier-1s/{id}/nat/USER/nat-rules
+// We use the cheaper count-only form via include_mark_for_delete_objects=false.
+// ---------------------------------------------------------------------------
+
+// PolicyNATRuleList represents GET nat-rules — we only need the count.
+type PolicyNATRuleList struct {
+	ResultCount int `json:"result_count"`
+}
+
+// ---------------------------------------------------------------------------
+// Policy API — Gateway Firewall policies per Tier-1
+// GET /policy/api/v1/infra/domains/default/gateway-policies?include_rule_count=true
+// ---------------------------------------------------------------------------
+
+// PolicyGatewayPolicyList represents GET gateway-policies with rule counts.
+type PolicyGatewayPolicyList struct {
+	ResultCount int                   `json:"result_count"`
+	Cursor      string                `json:"cursor"`
+	Results     []PolicyGatewayPolicy `json:"results"`
+}
+
+// PolicyGatewayPolicy is one gateway firewall policy with rule_count populated
+// when the request includes include_rule_count=true.
+type PolicyGatewayPolicy struct {
+	ID          string   `json:"id"`
+	DisplayName string   `json:"display_name"`
+	Category    string   `json:"category,omitempty"`
+	Scope       []string `json:"scope,omitempty"` // /infra/tier-1s/<id> or /infra/tier-0s/<id>
+	RuleCount   int      `json:"rule_count"`
+}
+
+// ---------------------------------------------------------------------------
+// Policy API — Edge Clusters (resolves edge_cluster_id → display_name)
+// GET /policy/api/v1/infra/sites/default/enforcement-points/default/edge-clusters
+// ---------------------------------------------------------------------------
+
+// PolicyEdgeClusterList represents the Policy API edge clusters list.
+type PolicyEdgeClusterList struct {
+	ResultCount int                 `json:"result_count"`
+	Cursor      string              `json:"cursor"`
+	Results     []PolicyEdgeCluster `json:"results"`
+}
+
+// PolicyEdgeCluster carries display name + nsx_id (= legacy edge_cluster_id).
+type PolicyEdgeCluster struct {
+	ID          string `json:"id"`
+	NSXID       string `json:"nsx_id"`       // matches legacy logical-router.edge_cluster_id
+	DisplayName string `json:"display_name"`
+	Path        string `json:"path"`
+}
+
+// ---------------------------------------------------------------------------
+// Policy API — Groups with effective member counts (for waste/orphan analysis)
+// GET /policy/api/v1/infra/domains/default/groups
+// Effective members fetched per-group via /members/virtual-machines etc.
+// To keep cost low we just expose the list endpoint here; the worker will
+// sample effective counts on demand (top-N or rotating sample).
+// ---------------------------------------------------------------------------
+
+// PolicyGroupList represents GET groups.
+type PolicyGroupList struct {
+	ResultCount int           `json:"result_count"`
+	Cursor      string        `json:"cursor"`
+	Results     []PolicyGroup `json:"results"`
+}
+
+// PolicyGroup is one logical group; we only need the path + name + expression presence.
+type PolicyGroup struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name"`
+	Path        string `json:"path"`
+	// Expression set indicates the group has matching criteria (vs an empty group).
+	Expression []json.RawMessage `json:"expression,omitempty"`
+}

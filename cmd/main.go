@@ -22,6 +22,7 @@ import (
 	"nsx-collector/internal/config"
 	influxpkg "nsx-collector/internal/influxdb"
 	"nsx-collector/internal/nsx"
+	"nsx-collector/internal/t1watch"
 )
 
 func main() {
@@ -96,11 +97,59 @@ func main() {
 		}
 	}
 
-	// Build workers (one per manager)
+	// Shared Slack token (env var named in slack.bot_token_env, default
+	// SLACK_BOT_TOKEN) — used by both the bandwidth alerter and the
+	// t1watch new-T1 notifier.
+	slackTokenEnv := cfg.Slack.BotTokenEnv
+	if slackTokenEnv == "" {
+		slackTokenEnv = "SLACK_BOT_TOKEN"
+	}
+	slackToken := os.Getenv(slackTokenEnv)
+
+	// Build workers (one per manager) plus the per-site CapacityCollector
+	// that drives the Capacity NSX panel and the new-T1 Slack bot.
 	rateCalc := collector.NewRateCalculator()
 	var workers []*collector.Worker
 	for _, mgr := range managers {
-		workers = append(workers, collector.NewWorker(mgr, writer, cfg.Intervals, cfg.InterfaceSpeeds, rateCalc, alertEval))
+		w := collector.NewWorker(mgr, writer, cfg.Intervals, cfg.InterfaceSpeeds, rateCalc, alertEval, nil)
+
+		// Build the t1watch.Notifier (Slack). Channel resolution:
+		//   1. t1_watch.slack_channel (preferred — segregates capacity events)
+		//   2. fallback to slack.channel
+		// When neither token nor channel is available, notifier is nil and
+		// the CapacityCollector still maintains the snapshot + emits InfluxDB
+		// event points for the dashboard.
+		var notifier *t1watch.Notifier
+		channel := cfg.T1Watch.SlackChannel
+		if channel == "" {
+			channel = cfg.Slack.Channel
+		}
+		if cfg.T1Watch.Enabled && slackToken != "" && channel != "" {
+			notifier = &t1watch.Notifier{
+				Slack:  alerting.NewSlackClient(slackToken, channel),
+				Site:   mgr.Site,
+				Logger: logger.Named("t1watch").Named(mgr.Site),
+			}
+			logger.Info("t1watch enabled",
+				zap.String("site", mgr.Site),
+				zap.String("channel", channel),
+			)
+		} else if cfg.T1Watch.Enabled {
+			logger.Warn("t1watch enabled in config but slack token/channel missing — running snapshot-only",
+				zap.String("site", mgr.Site),
+				zap.String("token_env", slackTokenEnv),
+				zap.String("channel", channel),
+			)
+		}
+
+		capCollector := collector.NewCapacityCollector(
+			mgr.Site, w.Client(), cfg.T1Watch.StateDir,
+			cfg.Capacity, cfg.T1Watch, notifier,
+			logger.Named(mgr.Site),
+		)
+		w.SetCapacityCollector(capCollector)
+
+		workers = append(workers, w)
 		logger.Info("manager registered",
 			zap.String("site", mgr.Site),
 			zap.String("url", mgr.URL),

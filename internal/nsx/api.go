@@ -257,3 +257,173 @@ func (c *Client) GetLBServiceStatus(ctx context.Context, serviceID string) (*LBS
 	return &result, nil
 }
 
+// ---------------------------------------------------------------------------
+// Policy API — LB credits, Tier-0/1, Segments, NAT, GW Policies, Edge Clusters, Groups
+// ---------------------------------------------------------------------------
+
+// GetLBNodeUsageSummary returns LB credit usage aggregated (manager scope) plus
+// per-edge-node detail (when include_usages=true). One JSON, one round-trip.
+// Required for the "Capacity NSX" panel — not exposed by /api/v1/capacity/usage.
+func (c *Client) GetLBNodeUsageSummary(ctx context.Context) (*LBNodeUsageSummary, error) {
+	var result LBNodeUsageSummaryResponse
+	if err := c.doGet(ctx, "/policy/api/v1/infra/lb-node-usage-summary?include_usages=true", &result); err != nil {
+		return nil, fmt.Errorf("lb node usage summary: %w", err)
+	}
+	if len(result.Results) == 0 {
+		return nil, nil
+	}
+	r := result.Results[0]
+	return &r, nil
+}
+
+// GetPolicyTier0s lists all Policy API Tier-0 gateways (regular + VRF).
+// VRFs are distinguished by PolicyTier0.IsVRF() (vrf_config presence).
+func (c *Client) GetPolicyTier0s(ctx context.Context) ([]PolicyTier0, error) {
+	var all []PolicyTier0
+	cursor := ""
+	for {
+		path := "/policy/api/v1/infra/tier-0s?page_size=200"
+		if cursor != "" {
+			path += "&cursor=" + cursor
+		}
+		var page PolicyTier0List
+		if err := c.doGet(ctx, path, &page); err != nil {
+			return nil, fmt.Errorf("policy tier-0s: %w", err)
+		}
+		all = append(all, page.Results...)
+		if page.Cursor == "" || len(page.Results) == 0 {
+			break
+		}
+		cursor = page.Cursor
+	}
+	return all, nil
+}
+
+// GetPolicyTier1s lists all Policy API Tier-1 gateways with their tier0_path
+// (which points to either a regular T0 or a VRF — see PolicyTier0.IsVRF).
+func (c *Client) GetPolicyTier1s(ctx context.Context) ([]PolicyTier1, error) {
+	var all []PolicyTier1
+	cursor := ""
+	for {
+		path := "/policy/api/v1/infra/tier-1s?page_size=200"
+		if cursor != "" {
+			path += "&cursor=" + cursor
+		}
+		var page PolicyTier1List
+		if err := c.doGet(ctx, path, &page); err != nil {
+			return nil, fmt.Errorf("policy tier-1s: %w", err)
+		}
+		all = append(all, page.Results...)
+		if page.Cursor == "" || len(page.Results) == 0 {
+			break
+		}
+		cursor = page.Cursor
+	}
+	return all, nil
+}
+
+// GetPolicySegments lists all Policy API segments. connectivity_path is the
+// link to either a T1 or T0 — used for "segments per VRF/T0".
+func (c *Client) GetPolicySegments(ctx context.Context) ([]PolicySegment, error) {
+	var all []PolicySegment
+	cursor := ""
+	for {
+		path := "/policy/api/v1/infra/segments?page_size=500"
+		if cursor != "" {
+			path += "&cursor=" + cursor
+		}
+		var page PolicySegmentList
+		if err := c.doGet(ctx, path, &page); err != nil {
+			return nil, fmt.Errorf("policy segments: %w", err)
+		}
+		all = append(all, page.Results...)
+		if page.Cursor == "" || len(page.Results) == 0 {
+			break
+		}
+		cursor = page.Cursor
+	}
+	return all, nil
+}
+
+// GetTier1NATRuleCount returns the number of USER NAT rules on one Tier-1.
+// Cheap because page_size=1 still populates result_count.
+func (c *Client) GetTier1NATRuleCount(ctx context.Context, tier1ID string) (int, error) {
+	var result PolicyNATRuleList
+	path := "/policy/api/v1/infra/tier-1s/" + tier1ID + "/nat/USER/nat-rules?page_size=1"
+	if err := c.doGet(ctx, path, &result); err != nil {
+		return 0, fmt.Errorf("nat rules count for t1 %s: %w", tier1ID, err)
+	}
+	return result.ResultCount, nil
+}
+
+// GetGatewayPolicies lists all gateway firewall policies with rule_count populated.
+// Used to attribute firewall rules to specific T1/T0 gateways via Scope.
+func (c *Client) GetGatewayPolicies(ctx context.Context) ([]PolicyGatewayPolicy, error) {
+	var all []PolicyGatewayPolicy
+	cursor := ""
+	for {
+		path := "/policy/api/v1/infra/domains/default/gateway-policies?include_rule_count=true&page_size=200"
+		if cursor != "" {
+			path += "&cursor=" + cursor
+		}
+		var page PolicyGatewayPolicyList
+		if err := c.doGet(ctx, path, &page); err != nil {
+			return nil, fmt.Errorf("gateway policies: %w", err)
+		}
+		all = append(all, page.Results...)
+		if page.Cursor == "" || len(page.Results) == 0 {
+			break
+		}
+		cursor = page.Cursor
+	}
+	return all, nil
+}
+
+// GetPolicyEdgeClusters lists all Policy API edge clusters under the default
+// site/enforcement-point. nsx_id matches the legacy logical-router.edge_cluster_id
+// — needed to resolve T1.edge_cluster_id → human-readable cluster display_name
+// for the Slack T1-created message ("criado no CLUSTER <name>").
+func (c *Client) GetPolicyEdgeClusters(ctx context.Context) ([]PolicyEdgeCluster, error) {
+	var all []PolicyEdgeCluster
+	cursor := ""
+	for {
+		path := "/policy/api/v1/infra/sites/default/enforcement-points/default/edge-clusters?page_size=100"
+		if cursor != "" {
+			path += "&cursor=" + cursor
+		}
+		var page PolicyEdgeClusterList
+		if err := c.doGet(ctx, path, &page); err != nil {
+			return nil, fmt.Errorf("policy edge clusters: %w", err)
+		}
+		all = append(all, page.Results...)
+		if page.Cursor == "" || len(page.Results) == 0 {
+			break
+		}
+		cursor = page.Cursor
+	}
+	return all, nil
+}
+
+// GetPolicyGroups lists all groups in the default domain. Used to count
+// groups with empty Expression (potential orphans).
+func (c *Client) GetPolicyGroups(ctx context.Context) ([]PolicyGroup, error) {
+	var all []PolicyGroup
+	cursor := ""
+	for {
+		path := "/policy/api/v1/infra/domains/default/groups?page_size=500"
+		if cursor != "" {
+			path += "&cursor=" + cursor
+		}
+		var page PolicyGroupList
+		if err := c.doGet(ctx, path, &page); err != nil {
+			return nil, fmt.Errorf("policy groups: %w", err)
+		}
+		all = append(all, page.Results...)
+		if page.Cursor == "" || len(page.Results) == 0 {
+			break
+		}
+		cursor = page.Cursor
+	}
+	return all, nil
+}
+
