@@ -1,0 +1,2549 @@
+{
+  "title": "Capacity NSX",
+  "uid": "capacity-nsx",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "tags": [
+    "nsx",
+    "capacity"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "site",
+        "type": "query",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "efcqeppjazvgga"
+        },
+        "label": "Site",
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"nsx_capacity\", tag: \"site\")",
+        "refresh": 1,
+        "sort": 1
+      },
+      {
+        "name": "t1_target",
+        "type": "textbox",
+        "label": "T1 Alvo",
+        "query": "3000",
+        "current": {
+          "text": "3000",
+          "value": "3000"
+        }
+      },
+      {
+        "name": "proj_start",
+        "type": "textbox",
+        "label": "Projeção — início janela passado",
+        "query": "-31d",
+        "current": {
+          "text": "-31d",
+          "value": "-31d"
+        }
+      },
+      {
+        "name": "proj_stop",
+        "type": "textbox",
+        "label": "Projeção — fim janela passado",
+        "query": "-30d",
+        "current": {
+          "text": "-30d",
+          "value": "-30d"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "L0 · Planejamento por site (formato planilha — selecione $site)",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "T1 Atual",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 8,
+        "h": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_t1_totals\" and r._field == \"total\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> last()\n  |> group()\n  |> sum()",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "T1 Alvo",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 1,
+        "w": 8,
+        "h": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_t1_totals\" and r._field == \"total\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> last()\n  |> group()\n  |> count()\n  |> map(fn: (r) => ({r with _value: ${t1_target}.0}))",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Delta (Atual − Alvo)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 1,
+        "w": 8,
+        "h": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "atual = from(bucket: \"nsx_capacity\") |> range(start: -10m) |> filter(fn: (r) => r._measurement == \"nsx_t1_totals\" and r._field == \"total\") |> filter(fn: (r) => r.site =~ /^${site:regex}$/) |> last() |> group() |> sum() |> findRecord(fn: (key) => true, idx: 0)\nfrom(bucket: \"nsx_capacity\") |> range(start: -1m) |> filter(fn: (r) => r._measurement == \"nsx_t1_totals\" and r._field == \"total\") |> last() |> limit(n: 1) |> map(fn: (r) => ({r with _value: atual._value - ${t1_target}.0}))",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "orange",
+                "value": 500
+              },
+              {
+                "color": "red",
+                "value": 1000
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Indicadores globais NSX (formato planilha)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "import \"math\"\n\n// 1) Snapshot atual: current_usage + max_supported por (site, usage_type),\n//    agregado cross-site (soma) por usage_type.\nnow_agg = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> last()\n  |> pivot(rowKey: [\"site\",\"usage_type\",\"display_name\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group(columns: [\"usage_type\",\"display_name\"])\n  |> reduce(\n       identity: {atual: 0.0, limite: 0.0},\n       fn: (r, accumulator) => ({\n         atual:  accumulator.atual  + r.current_usage,\n         limite: accumulator.limite + r.max_supported,\n       }))\n  |> group()\n\n// 2) Snapshot passado: média da janela [${proj_start}, ${proj_stop}].\npast_agg = from(bucket: \"nsx_capacity\")\n  |> range(start: ${proj_start}, stop: ${proj_stop})\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> mean()\n  |> group(columns: [\"usage_type\"])\n  |> sum()\n  |> rename(columns: {_value: \"atual_passado\"})\n  |> group()\n  |> keep(columns: [\"usage_type\",\"atual_passado\"])\n\n// 3) Conta VRFs distintas no(s) site(s) — denominador \"Por cliente\".\nvrf_count_raw = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_t1_per_vrf\" and r._field == \"t1_count\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> last()\n  |> group()\n  |> count()\n  |> findRecord(fn: (key) => true, idx: 0)\n\nsafe_vrf = if exists vrf_count_raw._value and vrf_count_raw._value > 0 then float(v: vrf_count_raw._value) else 1.0\n\n// 4) Join atual + passado, calcula projeção e número final.\njoin(tables: {a: now_agg, b: past_agg}, on: [\"usage_type\"])\n  |> map(fn: (r) => ({r with\n         por_cliente: math.round(x: r.atual / safe_vrf * 100.0) / 100.0,\n         projecao:    r.atual - r.atual_passado,\n         numero_final: r.atual + (r.atual - r.atual_passado),\n       }))\n  |> keep(columns: [\"display_name\",\"limite\",\"atual\",\"por_cliente\",\"projecao\",\"numero_final\"])\n  |> rename(columns: {display_name: \"Indicador\", limite: \"Limite\", atual: \"Nº Atual\", por_cliente: \"Por cliente\", projecao: \"Projeção\", numero_final: \"Número final\"})\n  |> sort(columns: [\"Indicador\"])",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "row",
+      "title": "L1 · Overview por site (selecione $site)",
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Total T1s do site",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_t1_totals\" and r._field == \"total\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> last()",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 100
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "T1s sob VRF",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 16,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_t1_totals\" and r._field == \"on_vrf\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> last()",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 100
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Maior usage_pct (system-wide)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 16,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"usage_pct\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> group()\n  |> max()",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "orange",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 85
+              }
+            ]
+          },
+          "min": 0,
+          "max": 100
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "LB credits %",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_lb_credits\" and r._field == \"usage_pct\" and r.scope == \"manager\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> last()",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "orange",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 85
+              }
+            ]
+          },
+          "min": 0,
+          "max": 100
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "Edge nodes em RED (LB)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 16,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_lb_credits\" and r._field == \"nodes_red\" and r.scope == \"manager\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> last()",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Alarmes capacity ativos",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 16,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_alarm\" and r._field == \"severity_num\")\n  |> filter(fn: (r) => r.feature_name =~ /(?i)capacity/)\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> group()\n  |> count()",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 100
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 13,
+      "type": "row",
+      "title": "L2 · Routing capacity",
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "T1 / T0 / VRFs — uso (%)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"usage_pct\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_TIER0_ROUTERS|NUMBER_OF_TIER1_WITH_NAT_RULE|NUMBER_OF_PREFIX_LIST)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last)\n  |> map(fn: (r) => ({r with _field: r.display_name + \" (\" + r.site + \")\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "orange",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 85
+              }
+            ]
+          },
+          "min": 0,
+          "max": 100
+        }
+      }
+    },
+    {
+      "id": 15,
+      "type": "table",
+      "title": "T1 por T0 (não-VRF) — current vs limite",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 21,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_t1_per_t0\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> last()\n  |> pivot(rowKey: [\"site\",\"t0_name\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> sort(columns: [\"usage_pct\"], desc: true)",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 16,
+      "type": "table",
+      "title": "T1 por VRF — current vs limite preestabelecido",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_t1_per_vrf\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> last()\n  |> pivot(rowKey: [\"site\",\"vrf_name\",\"t0_parent\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> sort(columns: [\"usage_pct\"], desc: true)",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 17,
+      "type": "row",
+      "title": "L3 · Firewall / DFW / NAT (NAT em 85% no TESP3!)",
+      "gridPos": {
+        "x": 0,
+        "y": 39,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 18,
+      "type": "gauge",
+      "title": "NAT rules system-wide (%)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 6,
+        "h": 7
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_NAT_RULES\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> filter(fn: (r) => r._field == \"usage_pct\")\n  |> last()",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "orange",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 85
+              }
+            ]
+          },
+          "min": 0,
+          "max": 100
+        }
+      }
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Firewall / DFW — uso (%)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 40,
+        "w": 18,
+        "h": 7
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"usage_pct\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_FIREWALL_RULES|NUMBER_OF_FIREWALL_SECTIONS|NUMBER_OF_DFW_RULES|NUMBER_OF_DFW_SECTIONS|NUMBER_OF_NAT_RULES)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last)\n  |> map(fn: (r) => ({r with _field: r.display_name + \" (\" + r.site + \")\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "orange",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 85
+              }
+            ]
+          },
+          "min": 0,
+          "max": 100
+        }
+      }
+    },
+    {
+      "id": 20,
+      "type": "table",
+      "title": "FW rules atribuídos por gateway (T1/VRF/T0)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 47,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_fw_per_gateway\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> last()\n  |> pivot(rowKey: [\"site\",\"gateway_kind\",\"gateway_name\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> sort(columns: [\"fw_rules\"], desc: true)\n  |> limit(n: 50)",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 21,
+      "type": "table",
+      "title": "Top NAT rules por T1 (quando collect_nat_per_t1=true)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 56,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_nat_per_t1\" and r._field == \"nat_rules\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> last()\n  |> group()\n  |> sort(columns: [\"_value\"], desc: true)\n  |> limit(n: 30)\n  |> keep(columns: [\"site\",\"parent_kind\",\"parent_name\",\"t1_name\",\"_value\"])",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 22,
+      "type": "row",
+      "title": "L4 · Switching",
+      "gridPos": {
+        "x": 0,
+        "y": 64,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 23,
+      "type": "timeseries",
+      "title": "Segments + Logical Ports — uso (%)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 65,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"usage_pct\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_LOGICAL_PORTS)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last)\n  |> map(fn: (r) => ({r with _field: r.display_name + \" (\" + r.site + \")\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "orange",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 85
+              }
+            ]
+          },
+          "min": 0,
+          "max": 100
+        }
+      }
+    },
+    {
+      "id": 24,
+      "type": "table",
+      "title": "Segments por parent (T1/VRF/T0)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 65,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_segments_per_parent\" and r._field == \"segment_count\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> last()\n  |> group()\n  |> sort(columns: [\"_value\"], desc: true)\n  |> limit(n: 30)\n  |> keep(columns: [\"site\",\"parent_kind\",\"parent_name\",\"_value\"])",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 25,
+      "type": "row",
+      "title": "L5 · Groups / IP Sets",
+      "gridPos": {
+        "x": 0,
+        "y": 72,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 26,
+      "type": "timeseries",
+      "title": "Groups system-wide — uso (%)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 73,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"usage_pct\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_NSGROUP|NUMBER_OF_GROUPS_BASED_ON_IP_SETS|NUMBER_OF_IPSETS)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last)\n  |> map(fn: (r) => ({r with _field: r.display_name + \" (\" + r.site + \")\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "orange",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 85
+              }
+            ]
+          },
+          "min": 0,
+          "max": 100
+        }
+      }
+    },
+    {
+      "id": 27,
+      "type": "timeseries",
+      "title": "Groups — total vs vazios (orphan)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 73,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"nsx_groups_inventory\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last)\n  |> keep(columns: [\"_time\",\"_value\",\"_field\",\"site\"])",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 28,
+      "type": "row",
+      "title": "L6 · Load Balancer credits (NOVO)",
+      "gridPos": {
+        "x": 0,
+        "y": 80,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 29,
+      "type": "stat",
+      "title": "LB credits used / capacity",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 81,
+        "w": 6,
+        "h": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_lb_credits\" and r._field == \"used_credits\" and r.scope == \"manager\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> last()",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 100
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "LB credits usage % (timeseries)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 81,
+        "w": 12,
+        "h": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"nsx_lb_credits\" and r._field == \"usage_pct\" and r.scope == \"manager\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last)\n  |> keep(columns: [\"_time\",\"_value\",\"site\"])\n  |> rename(columns: {site: \"_field\"})",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "orange",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 85
+              }
+            ]
+          },
+          "min": 0,
+          "max": 100
+        }
+      }
+    },
+    {
+      "id": 31,
+      "type": "stat",
+      "title": "Pool members usados / capacidade",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 81,
+        "w": 6,
+        "h": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_lb_credits\" and r._field == \"pool_members_used\" and r.scope == \"manager\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> last()",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 100
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 32,
+      "type": "table",
+      "title": "LB credits por edge node (size + severity)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 87,
+        "w": 24,
+        "h": 11
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_lb_credits\" and r.scope == \"edge_node\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> filter(fn: (r) => r._field == \"usage_pct\" or r._field == \"used_credits\" or r._field == \"credit_capacity\" or r._field == \"severity_num\" or r._field == \"small_lb_count\" or r._field == \"medium_lb_count\" or r._field == \"large_lb_count\" or r._field == \"xlarge_lb_count\" or r._field == \"pool_members_used\")\n  |> last()\n  |> pivot(rowKey: [\"site\",\"edge_cluster_id\",\"node_id\",\"form_factor\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> sort(columns: [\"usage_pct\"], desc: true)",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 33,
+      "type": "row",
+      "title": "L7 · Edge / Infra",
+      "gridPos": {
+        "x": 0,
+        "y": 98,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 34,
+      "type": "timeseries",
+      "title": "Edge / Infra — uso (%)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 99,
+        "w": 24,
+        "h": 7
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"usage_pct\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_EDGE_NODES|NUMBER_OF_EDGE_CLUSTERS|NUMBER_OF_PREPARED_HOSTS|NUMBER_OF_VCENTER_CLUSTERS|NUMBER_OF_COMPUTE_MANAGER)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last)\n  |> map(fn: (r) => ({r with _field: r.display_name + \" (\" + r.site + \")\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "orange",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 85
+              }
+            ]
+          },
+          "min": 0,
+          "max": 100
+        }
+      }
+    },
+    {
+      "id": 36,
+      "type": "row",
+      "title": "L8 · SI / Identity FW / Endpoint (colapsada — TESP3 está 0%)",
+      "gridPos": {
+        "x": 0,
+        "y": 106,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": true,
+      "panels": [
+        {
+          "id": 35,
+          "type": "timeseries",
+          "title": "Service Insertion + Identity FW — uso (%)",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 12,
+            "h": 8
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "influxdb",
+                "uid": "efcqeppjazvgga"
+              },
+              "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"usage_pct\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_SI_SECTIONS|NUMBER_OF_SI_RULES|NUMBER_OF_SI_SERVICE_CHAINS|NUMBER_OF_SI_SERVICE_PATHS|NUMBER_OF_ACTIVE_DIRECTORY_DOMAINS|NUMBER_OF_ACTIVE_DIRECTORY_GROUPS|NUMBER_OF_GI_PROTECTED_VMS|NUMBER_OF_GI_PROTECTED_HOSTS)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last)\n  |> map(fn: (r) => ({r with _field: r.display_name + \" (\" + r.site + \")\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+              "refId": "A",
+              "hide": false
+            }
+          ],
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 50
+                  },
+                  {
+                    "color": "orange",
+                    "value": 70
+                  },
+                  {
+                    "color": "red",
+                    "value": 85
+                  }
+                ]
+              },
+              "min": 0,
+              "max": 100
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 38,
+      "type": "row",
+      "title": "L9 · DHCP (colapsada — TESP3 está 0%)",
+      "gridPos": {
+        "x": 0,
+        "y": 107,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": true,
+      "panels": [
+        {
+          "id": 37,
+          "type": "timeseries",
+          "title": "DHCP — uso (%)",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 12,
+            "h": 8
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "influxdb",
+                "uid": "efcqeppjazvgga"
+              },
+              "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"usage_pct\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_DHCP_IP_POOLS|NUMBER_OF_DHCP_V6_IP_POOLS|NUMBER_OF_DHCP_SERVERS)$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: last)\n  |> map(fn: (r) => ({r with _field: r.display_name + \" (\" + r.site + \")\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+              "refId": "A",
+              "hide": false
+            }
+          ],
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 50
+                  },
+                  {
+                    "color": "orange",
+                    "value": 70
+                  },
+                  {
+                    "color": "red",
+                    "value": 85
+                  }
+                ]
+              },
+              "min": 0,
+              "max": 100
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 39,
+      "type": "row",
+      "title": "A · Headroom & projeção (planejamento de crescimento)",
+      "gridPos": {
+        "x": 0,
+        "y": 108,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 40,
+      "type": "table",
+      "title": "A1 · Headroom absoluto por dimensão (max - current)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 109,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and (r._field == \"current_usage\" or r._field == \"max_supported\"))\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> last()\n  |> pivot(rowKey: [\"site\",\"usage_type\",\"display_name\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> map(fn: (r) => ({r with headroom: r.max_supported - r.current_usage}))\n  |> sort(columns: [\"headroom\"], desc: false)",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 41,
+      "type": "table",
+      "title": "A3 · Velocidade — Δ últimas 24h (top 10)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 109,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "last = from(bucket: \"nsx_capacity\") |> range(start: -10m) |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\") |> filter(fn: (r) => r.site =~ /^${site:regex}$/) |> last() |> keep(columns: [\"site\",\"usage_type\",\"display_name\",\"_value\"]) |> rename(columns: {_value: \"now\"})\nday = from(bucket: \"nsx_capacity\") |> range(start: -25h, stop: -23h) |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\") |> filter(fn: (r) => r.site =~ /^${site:regex}$/) |> mean() |> keep(columns: [\"site\",\"usage_type\",\"_value\"]) |> rename(columns: {_value: \"day_ago\"})\njoin(tables: {a: last, b: day}, on: [\"site\",\"usage_type\"]) |> map(fn: (r) => ({r with delta_24h: r.now - r.day_ago})) |> sort(columns: [\"delta_24h\"], desc: true) |> limit(n: 10)",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 42,
+      "type": "table",
+      "title": "A4 · Δ7d / Δ30d / Δ90d por dimensão",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 118,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "now7 = from(bucket: \"nsx_capacity\") |> range(start: -10m) |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\") |> filter(fn: (r) => r.site =~ /^${site:regex}$/) |> last() |> keep(columns: [\"site\",\"usage_type\",\"display_name\",\"_value\"]) |> rename(columns: {_value: \"now\"})\n d7 = from(bucket: \"nsx_capacity\") |> range(start: -7d, stop: -6d23h) |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\") |> filter(fn: (r) => r.site =~ /^${site:regex}$/) |> mean() |> keep(columns: [\"site\",\"usage_type\",\"_value\"]) |> rename(columns: {_value: \"d7\"})\nd30 = from(bucket: \"nsx_capacity\") |> range(start: -30d, stop: -29d23h) |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\") |> filter(fn: (r) => r.site =~ /^${site:regex}$/) |> mean() |> keep(columns: [\"site\",\"usage_type\",\"_value\"]) |> rename(columns: {_value: \"d30\"})\nd90 = from(bucket: \"nsx_capacity\") |> range(start: -90d, stop: -89d23h) |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\") |> filter(fn: (r) => r.site =~ /^${site:regex}$/) |> mean() |> keep(columns: [\"site\",\"usage_type\",\"_value\"]) |> rename(columns: {_value: \"d90\"})\n j1 = join(tables: {a: now7, b: d7}, on: [\"site\",\"usage_type\"])\n j2 = join(tables: {a: j1, b: d30}, on: [\"site\",\"usage_type\"])\n j3 = join(tables: {a: j2, b: d90}, on: [\"site\",\"usage_type\"])\n j3 |> map(fn: (r) => ({r with delta_7d: r.now - r.d7, delta_30d: r.now - r.d30, delta_90d: r.now - r.d90})) |> sort(columns: [\"delta_7d\"], desc: true)",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 43,
+      "type": "stat",
+      "title": "A5 · Onboarding capacity estimada (VRFs com folga)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 128,
+        "w": 24,
+        "h": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "live = from(bucket: \"nsx_capacity\") |> range(start: -10m) |> filter(fn: (r) => r._measurement == \"nsx_t1_per_vrf\" and (r._field == \"t1_count\" or r._field == \"limit\")) |> filter(fn: (r) => r.site =~ /^${site:regex}$/) |> last() |> pivot(rowKey: [\"site\",\"vrf_name\"], columnKey: [\"_field\"], valueColumn: \"_value\") |> map(fn: (r) => ({r with slack: r.limit - r.t1_count})) |> filter(fn: (r) => r.slack > 0) |> group() |> sum(column: \"slack\")",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "id": 44,
+      "type": "row",
+      "title": "B · Ranking por consumidor (multi-tenant / por VRF / por T0)",
+      "gridPos": {
+        "x": 0,
+        "y": 133,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 45,
+      "type": "bargauge",
+      "title": "B1 · Top 20 VRFs por #T1",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 134,
+        "w": 12,
+        "h": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_t1_per_vrf\" and r._field == \"t1_count\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> last()\n  |> group()\n  |> sort(columns: [\"_value\"], desc: true)\n  |> limit(n: 20)\n  |> keep(columns: [\"site\",\"vrf_name\",\"_value\"])\n  |> rename(columns: {vrf_name: \"_field\"})",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 46,
+      "type": "table",
+      "title": "B5 · Top 10 T0 clusters por #T1 + LB credits + NAT",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 134,
+        "w": 12,
+        "h": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\") |> range(start: -10m) |> filter(fn: (r) => r._measurement == \"nsx_t1_per_t0\") |> filter(fn: (r) => r.site =~ /^${site:regex}$/) |> last() |> pivot(rowKey: [\"site\",\"t0_name\"], columnKey: [\"_field\"], valueColumn: \"_value\") |> group() |> sort(columns: [\"t1_count\"], desc: true) |> limit(n: 10)",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 47,
+      "type": "table",
+      "title": "B6 · Distribuição small/medium/large/xlarge por edge node",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 144,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\") |> range(start: -10m) |> filter(fn: (r) => r._measurement == \"nsx_lb_credits\" and r.scope == \"edge_node\") |> filter(fn: (r) => r._field == \"small_lb_count\" or r._field == \"medium_lb_count\" or r._field == \"large_lb_count\" or r._field == \"xlarge_lb_count\") |> filter(fn: (r) => r.site =~ /^${site:regex}$/) |> last() |> pivot(rowKey: [\"site\",\"edge_cluster_id\",\"node_id\",\"form_factor\"], columnKey: [\"_field\"], valueColumn: \"_value\") |> group() |> sort(columns: [\"large_lb_count\",\"medium_lb_count\",\"small_lb_count\"], desc: true)",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 48,
+      "type": "row",
+      "title": "C · Atividade / movimento (novos / deletados / crescimento)",
+      "gridPos": {
+        "x": 0,
+        "y": 153,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 49,
+      "type": "stat",
+      "title": "C1 · T1 criados hoje",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 154,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx\")\n  |> range(start: today())\n  |> filter(fn: (r) => r._measurement == \"nsx_t1_event\" and r.event == \"created\" and r._field == \"count\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> group()\n  |> sum()",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 100
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 50,
+      "type": "stat",
+      "title": "C1 · T1 criados — 7d",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 154,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx\")\n  |> range(start: -7d)\n  |> filter(fn: (r) => r._measurement == \"nsx_t1_event\" and r.event == \"created\" and r._field == \"count\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> group()\n  |> sum()",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 100
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 51,
+      "type": "stat",
+      "title": "C2 · T1 deletados — 7d",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 154,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx\")\n  |> range(start: -7d)\n  |> filter(fn: (r) => r._measurement == \"nsx_t1_event\" and r.event == \"deleted\" and r._field == \"count\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> group()\n  |> sum()",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 100
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 52,
+      "type": "stat",
+      "title": "C3 · Crescimento líquido — 7d (cria - deleta)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 154,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "created = from(bucket: \"nsx\") |> range(start: -7d) |> filter(fn: (r) => r._measurement == \"nsx_t1_event\" and r.event == \"created\" and r._field == \"count\") |> filter(fn: (r) => r.site =~ /^${site:regex}$/) |> group() |> sum() |> findRecord(fn: (key) => true, idx: 0)\ndeleted = from(bucket: \"nsx\") |> range(start: -7d) |> filter(fn: (r) => r._measurement == \"nsx_t1_event\" and r.event == \"deleted\" and r._field == \"count\") |> filter(fn: (r) => r.site =~ /^${site:regex}$/) |> group() |> sum() |> findRecord(fn: (key) => true, idx: 0)\nfrom(bucket: \"nsx\") |> range(start: -1m) |> limit(n: 1) |> map(fn: (r) => ({r with _value: created._value - deleted._value}))",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 100
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 53,
+      "type": "timeseries",
+      "title": "C4 · Timeline de eventos de T1 (criados/deletados)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 159,
+        "w": 16,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"nsx_t1_event\" and r._field == \"count\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: sum, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: r.event + \" (\" + r.site + \")\"}))\n  |> keep(columns: [\"_time\",\"_value\",\"_field\"])",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 54,
+      "type": "table",
+      "title": "C5 · Atividade recente por edge cluster",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 159,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx\")\n  |> range(start: -7d)\n  |> filter(fn: (r) => r._measurement == \"nsx_t1_event\" and r.event == \"created\" and r._field == \"count\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> group(columns: [\"site\",\"edge_cluster_name\"])\n  |> sum()\n  |> group()\n  |> sort(columns: [\"_value\"], desc: true)",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 55,
+      "type": "row",
+      "title": "D · Eficiência & desperdício (oportunidades de otimização)",
+      "gridPos": {
+        "x": 0,
+        "y": 167,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 56,
+      "type": "table",
+      "title": "D2 · Groups vazios (orphan) — total por site",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 168,
+        "w": 8,
+        "h": 7
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\") |> range(start: -10m) |> filter(fn: (r) => r._measurement == \"nsx_groups_inventory\" and r._field == \"empty\") |> filter(fn: (r) => r.site =~ /^${site:regex}$/) |> last() |> keep(columns: [\"site\",\"_value\"])",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 57,
+      "type": "table",
+      "title": "D4 · VRFs heatmap por % de utilização do limite",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 168,
+        "w": 16,
+        "h": 7
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\") |> range(start: -10m) |> filter(fn: (r) => r._measurement == \"nsx_t1_per_vrf\") |> filter(fn: (r) => r.site =~ /^${site:regex}$/) |> last() |> pivot(rowKey: [\"site\",\"vrf_name\"], columnKey: [\"_field\"], valueColumn: \"_value\") |> filter(fn: (r) => r.usage_pct >= 50.0) |> sort(columns: [\"usage_pct\"], desc: true)",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 58,
+      "type": "table",
+      "title": "D5 · Edge nodes subutilizados em LB (< 30%)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 175,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\") |> range(start: -10m) |> filter(fn: (r) => r._measurement == \"nsx_lb_credits\" and r.scope == \"edge_node\" and r._field == \"usage_pct\") |> filter(fn: (r) => r.site =~ /^${site:regex}$/) |> last() |> filter(fn: (r) => r._value < 30.0) |> sort(columns: [\"_value\"], desc: false) |> keep(columns: [\"site\",\"edge_cluster_id\",\"node_id\",\"form_factor\",\"_value\"])",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 59,
+      "type": "table",
+      "title": "D6 · Edge nodes saturados (severity RED)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 175,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\") |> range(start: -10m) |> filter(fn: (r) => r._measurement == \"nsx_lb_credits\" and r.scope == \"edge_node\" and r._field == \"severity_num\") |> filter(fn: (r) => r.site =~ /^${site:regex}$/) |> last() |> filter(fn: (r) => r._value >= 3.0) |> keep(columns: [\"site\",\"edge_cluster_id\",\"node_id\",\"form_factor\"])",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 60,
+      "type": "row",
+      "title": "E · Site / regional (comparativo)",
+      "gridPos": {
+        "x": 0,
+        "y": 182,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 61,
+      "type": "table",
+      "title": "E1 · Heatmap site × dimensão (% utilização)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 183,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\") |> range(start: -10m) |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"usage_pct\") |> last() |> pivot(rowKey: [\"site\"], columnKey: [\"display_name\"], valueColumn: \"_value\")",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 62,
+      "type": "stat",
+      "title": "E2 · Site mais saturado (max % entre dimensões)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 193,
+        "w": 12,
+        "h": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\") |> range(start: -10m) |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"usage_pct\") |> last() |> group(columns: [\"site\"]) |> max() |> group() |> sort(columns: [\"_value\"], desc: true) |> limit(n: 1)",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "orange",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 85
+              }
+            ]
+          },
+          "min": 0,
+          "max": 100
+        }
+      }
+    },
+    {
+      "id": 63,
+      "type": "timeseries",
+      "title": "E3 · Crescimento por site últimos 30d (T1 total)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 193,
+        "w": 12,
+        "h": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: -30d)\n  |> filter(fn: (r) => r._measurement == \"nsx_t1_totals\" and r._field == \"total\")\n  |> aggregateWindow(every: 6h, fn: last, createEmpty: false)\n  |> keep(columns: [\"_time\",\"_value\",\"site\"])\n  |> rename(columns: {site: \"_field\"})",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    }
+  ]
+}
