@@ -1,8 +1,8 @@
 {
-  "title": "Capacity NSX — Onde colocar próximos clientes",
+  "title": "Capacity NSX — Clientes Possíveis",
   "uid": "capacity-nsx-clientes",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "editable": true,
   "refresh": "1m",
   "time": {
@@ -17,17 +17,6 @@
   ],
   "templating": {
     "list": [
-      {
-        "name": "site_all",
-        "type": "constant",
-        "label": "Sites em análise",
-        "query": "TESP2,TESP3,TESP5,TESP6,TESP7",
-        "current": {
-          "text": "TESP2,TESP3,TESP5,TESP6,TESP7",
-          "value": "TESP2,TESP3,TESP5,TESP6,TESP7"
-        },
-        "hide": 0
-      },
       {
         "name": "alvo_tesp2",
         "type": "textbox",
@@ -84,7 +73,7 @@
     {
       "id": 1,
       "type": "row",
-      "title": "📊 Sumário executivo — onde colocar próximos clientes?",
+      "title": "📊 Visão consolidada — onde colocar os próximos clientes",
       "gridPos": {
         "x": 0,
         "y": 0,
@@ -97,7 +86,7 @@
     {
       "id": 2,
       "type": "bargauge",
-      "title": "🎯 Clientes Possíveis HOJE em cada edge (todos os 5 — TESP7 incluído p/ ver o quanto está estourado)",
+      "title": "Clientes Possíveis HOJE em cada edge (limites NSX atuais, sem considerar T1 Alvo)",
       "datasource": {
         "type": "influxdb",
         "uid": "efcqeppjazvgga"
@@ -106,7 +95,7 @@
         "x": 0,
         "y": 1,
         "w": 24,
-        "h": 8
+        "h": 7
       },
       "targets": [
         {
@@ -114,7 +103,7 @@
             "type": "influxdb",
             "uid": "efcqeppjazvgga"
           },
-          "query": "import \"math\"\n\nsites_re = /^(TESP2|TESP3|TESP5|TESP6|TESP7)$/\n\nper_ind = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site =~ sites_re)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> pivot(rowKey: [\"site\",\"usage_type\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nt1_per_site = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site =~ sites_re)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> keep(columns: [\"site\",\"_value\"])\n  |> rename(columns: {_value: \"atual_t1\"})\n\njoin(tables: {a: per_ind, b: t1_per_site}, on: [\"site\"])\n  |> map(fn: (r) => ({r with cp: (if r.current_usage > 0.0 then (r.max_supported * r.atual_t1 / r.current_usage) - r.atual_t1 else 0.0)}))\n  |> group(columns: [\"site\"])\n  |> min(column: \"cp\")\n  |> group()\n  |> sort(columns: [\"cp\"], desc: true)\n  |> keep(columns: [\"site\",\"cp\"])\n  |> rename(columns: {cp: \"_value\", site: \"_field\"})",
+          "query": "import \"math\"\n\nper = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r.site =~ /^(TESP2|TESP3|TESP5|TESP6|TESP7)$/)\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> keep(columns: [\"site\",\"usage_type\",\"_field\",\"_value\"])\n  |> pivot(rowKey: [\"site\",\"usage_type\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nt1 = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site =~ /^(TESP2|TESP3|TESP5|TESP6|TESP7)$/)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> keep(columns: [\"site\",\"_value\"])\n  |> rename(columns: {_value: \"atual_t1\"})\n\njoin(tables: {a: per, b: t1}, on: [\"site\"])\n  |> map(fn: (r) => ({r with cp: (if r.current_usage > 0.0 then math.round(x: (r.max_supported * r.atual_t1 / r.current_usage) - r.atual_t1) else 0.0)}))\n  |> keep(columns: [\"site\",\"cp\"])\n  |> group(columns: [\"site\"])\n  |> min(column: \"cp\")\n  |> group()\n  |> sort(columns: [\"cp\"], desc: true)\n  |> rename(columns: {cp: \"_value\", site: \"_field\"})",
           "refId": "A",
           "hide": false
         }
@@ -122,6 +111,7 @@
       "options": {
         "orientation": "horizontal",
         "displayMode": "gradient",
+        "showUnfilled": true,
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -160,14 +150,14 @@
     {
       "id": 3,
       "type": "table",
-      "title": "🔥 Heatmap: Saturação % de cada indicador AO ATINGIR o T1 Alvo (por site)",
+      "title": "Heatmap — Saturação % de cada indicador AO atingir o T1 Alvo configurado por site",
       "datasource": {
         "type": "influxdb",
         "uid": "efcqeppjazvgga"
       },
       "gridPos": {
         "x": 0,
-        "y": 9,
+        "y": 8,
         "w": 24,
         "h": 9
       },
@@ -177,7 +167,7 @@
             "type": "influxdb",
             "uid": "efcqeppjazvgga"
           },
-          "query": "import \"math\"\nimport \"experimental\"\n\nsat_tesp2 = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site == \"TESP2\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> pivot(rowKey: [\"site\",\"usage_type\",\"display_name\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nt1_tesp2 = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == \"TESP2\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> findRecord(fn: (key) => true, idx: 0)\n\nat1_tesp2 = if exists t1_tesp2._value and t1_tesp2._value > 0.0 then t1_tesp2._value else 1.0\ndt1_tesp2 = float(v: ${alvo_tesp2}) - at1_tesp2\n\nrow_tesp2 = sat_tesp2\n  |> map(fn: (r) => ({r with sat: math.round(x: (r.current_usage + (r.current_usage / at1_tesp2) * dt1_tesp2) / r.max_supported * 100.0 * 100.0) / 100.0}))\n  |> keep(columns: [\"site\",\"display_name\",\"sat\"])\n  |> rename(columns: {sat: \"_value\"})\n\nsat_tesp3 = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site == \"TESP3\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> pivot(rowKey: [\"site\",\"usage_type\",\"display_name\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nt1_tesp3 = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == \"TESP3\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> findRecord(fn: (key) => true, idx: 0)\n\nat1_tesp3 = if exists t1_tesp3._value and t1_tesp3._value > 0.0 then t1_tesp3._value else 1.0\ndt1_tesp3 = float(v: ${alvo_tesp3}) - at1_tesp3\n\nrow_tesp3 = sat_tesp3\n  |> map(fn: (r) => ({r with sat: math.round(x: (r.current_usage + (r.current_usage / at1_tesp3) * dt1_tesp3) / r.max_supported * 100.0 * 100.0) / 100.0}))\n  |> keep(columns: [\"site\",\"display_name\",\"sat\"])\n  |> rename(columns: {sat: \"_value\"})\n\nsat_tesp5 = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site == \"TESP5\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> pivot(rowKey: [\"site\",\"usage_type\",\"display_name\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nt1_tesp5 = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == \"TESP5\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> findRecord(fn: (key) => true, idx: 0)\n\nat1_tesp5 = if exists t1_tesp5._value and t1_tesp5._value > 0.0 then t1_tesp5._value else 1.0\ndt1_tesp5 = float(v: ${alvo_tesp5}) - at1_tesp5\n\nrow_tesp5 = sat_tesp5\n  |> map(fn: (r) => ({r with sat: math.round(x: (r.current_usage + (r.current_usage / at1_tesp5) * dt1_tesp5) / r.max_supported * 100.0 * 100.0) / 100.0}))\n  |> keep(columns: [\"site\",\"display_name\",\"sat\"])\n  |> rename(columns: {sat: \"_value\"})\n\nsat_tesp6 = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site == \"TESP6\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> pivot(rowKey: [\"site\",\"usage_type\",\"display_name\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nt1_tesp6 = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == \"TESP6\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> findRecord(fn: (key) => true, idx: 0)\n\nat1_tesp6 = if exists t1_tesp6._value and t1_tesp6._value > 0.0 then t1_tesp6._value else 1.0\ndt1_tesp6 = float(v: ${alvo_tesp6}) - at1_tesp6\n\nrow_tesp6 = sat_tesp6\n  |> map(fn: (r) => ({r with sat: math.round(x: (r.current_usage + (r.current_usage / at1_tesp6) * dt1_tesp6) / r.max_supported * 100.0 * 100.0) / 100.0}))\n  |> keep(columns: [\"site\",\"display_name\",\"sat\"])\n  |> rename(columns: {sat: \"_value\"})\n\nsat_tesp7 = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site == \"TESP7\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> pivot(rowKey: [\"site\",\"usage_type\",\"display_name\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nt1_tesp7 = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == \"TESP7\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> findRecord(fn: (key) => true, idx: 0)\n\nat1_tesp7 = if exists t1_tesp7._value and t1_tesp7._value > 0.0 then t1_tesp7._value else 1.0\ndt1_tesp7 = float(v: ${alvo_tesp7}) - at1_tesp7\n\nrow_tesp7 = sat_tesp7\n  |> map(fn: (r) => ({r with sat: math.round(x: (r.current_usage + (r.current_usage / at1_tesp7) * dt1_tesp7) / r.max_supported * 100.0 * 100.0) / 100.0}))\n  |> keep(columns: [\"site\",\"display_name\",\"sat\"])\n  |> rename(columns: {sat: \"_value\"})\n\nunion(tables: [row_tesp2, row_tesp3, row_tesp5, row_tesp6, row_tesp7])\n  |> pivot(rowKey: [\"site\"], columnKey: [\"display_name\"], valueColumn: \"_value\")\n  |> sort(columns: [\"site\"])",
+          "query": "import \"math\"\n\n// Snapshot por site × usage_type.\nper = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r.site =~ /^(TESP2|TESP3|TESP5|TESP6|TESP7)$/)\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> keep(columns: [\"site\",\"usage_type\",\"_field\",\"_value\"])\n  |> pivot(rowKey: [\"site\",\"usage_type\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\n// Atual T1 por site (denominador).\nt1 = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site =~ /^(TESP2|TESP3|TESP5|TESP6|TESP7)$/)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> keep(columns: [\"site\",\"_value\"])\n  |> rename(columns: {_value: \"atual_t1\"})\n\njoin(tables: {a: per, b: t1}, on: [\"site\"])\n  |> map(fn: (r) => ({r with alvo_t1: (if r.site == \"TESP2\" then float(v: ${alvo_tesp2}) else if r.site == \"TESP3\" then float(v: ${alvo_tesp3}) else if r.site == \"TESP5\" then float(v: ${alvo_tesp5}) else if r.site == \"TESP6\" then float(v: ${alvo_tesp6}) else if r.site == \"TESP7\" then float(v: ${alvo_tesp7}) else 3000.0)}))\n  |> map(fn: (r) => ({r with\n         Indicador: (if r.usage_type == \"NUMBER_OF_LOGICAL_SWITCHES\" then \"Segments\" else if r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\" then \"T1\" else if r.usage_type == \"NUMBER_OF_NAT_RULES\" then \"System-wide NAT\" else if r.usage_type == \"NUMBER_OF_LOGICAL_PORTS\" then \"System-wide Logical Switch Ports\" else if r.usage_type == \"NUMBER_OF_GROUPS_BASED_ON_IP_SETS\" then \"Groups Based on IP Sets\" else r.usage_type),\n         saturacao: (if r.atual_t1 > 0.0 then math.round(x: (r.current_usage + (r.current_usage / r.atual_t1) * (r.alvo_t1 - r.atual_t1)) / r.max_supported * 1000.0) / 10.0 else 0.0),\n       }))\n  |> keep(columns: [\"site\",\"Indicador\",\"saturacao\"])\n  |> group()\n  |> pivot(rowKey: [\"site\"], columnKey: [\"Indicador\"], valueColumn: \"saturacao\")\n  |> sort(columns: [\"site\"])",
           "refId": "A",
           "hide": false
         }
@@ -192,7 +182,7 @@
         "defaults": {
           "unit": "percent",
           "min": 0,
-          "max": 120,
+          "max": 130,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -213,6 +203,12 @@
                 "value": 100
               }
             ]
+          },
+          "custom": {
+            "cellOptions": {
+              "type": "color-background",
+              "mode": "gradient"
+            }
           }
         }
       }
@@ -220,10 +216,10 @@
     {
       "id": 4,
       "type": "row",
-      "title": "━━━ TESP2 ━━━  (T1 Alvo = ${alvo_tesp2})",
+      "title": "━━━ TESP2 ━━━   T1 Alvo: ${alvo_tesp2}",
       "gridPos": {
         "x": 0,
-        "y": 18,
+        "y": 17,
         "w": 24,
         "h": 1
       },
@@ -232,235 +228,15 @@
     },
     {
       "id": 5,
-      "type": "stat",
-      "title": "Clientes Possíveis em TESP2",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "efcqeppjazvgga"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 19,
-        "w": 6,
-        "h": 6
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "efcqeppjazvgga"
-          },
-          "query": "import \"math\"\n\nsite = \"TESP2\"\nalvo_t1 = float(v: ${alvo_tesp2})\n\nper_ind = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> pivot(rowKey: [\"site\",\"usage_type\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nt1_now_raw = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> findRecord(fn: (key) => true, idx: 0)\n\natual_t1 = if exists t1_now_raw._value and t1_now_raw._value > 0.0 then t1_now_raw._value else 1.0\n\nper_ind\n  |> map(fn: (r) => ({r with cp: (if r.current_usage > 0.0 then (r.max_supported * atual_t1 / r.current_usage) - atual_t1 else 0.0)}))\n  |> keep(columns: [\"site\",\"cp\"])\n  |> min(column: \"cp\")\n  |> rename(columns: {cp: \"_value\", site: \"_field\"})",
-          "refId": "A",
-          "hide": false
-        }
-      ],
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "textMode": "value_and_name",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 1
-              },
-              {
-                "color": "yellow",
-                "value": 50
-              },
-              {
-                "color": "green",
-                "value": 150
-              }
-            ]
-          }
-        }
-      }
-    },
-    {
-      "id": 6,
-      "type": "stat",
-      "title": "Indicador que mais limita em TESP2",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "efcqeppjazvgga"
-      },
-      "gridPos": {
-        "x": 6,
-        "y": 19,
-        "w": 6,
-        "h": 6
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "efcqeppjazvgga"
-          },
-          "query": "import \"math\"\n\nsite = \"TESP2\"\n\nper_ind = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> pivot(rowKey: [\"site\",\"usage_type\",\"display_name\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nt1_now_raw = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> findRecord(fn: (key) => true, idx: 0)\n\natual_t1 = if exists t1_now_raw._value and t1_now_raw._value > 0.0 then t1_now_raw._value else 1.0\n\nper_ind\n  |> map(fn: (r) => ({r with cp: (if r.current_usage > 0.0 then (r.max_supported * atual_t1 / r.current_usage) - atual_t1 else 0.0)}))\n  |> keep(columns: [\"site\",\"display_name\",\"cp\"])\n  |> sort(columns: [\"cp\"], desc: false)\n  |> limit(n: 1)\n  |> rename(columns: {display_name: \"_value\", site: \"_field\"})\n  |> keep(columns: [\"_value\",\"_field\"])",
-          "refId": "A",
-          "hide": false
-        }
-      ],
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "textMode": "value_and_name",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "string"
-        }
-      }
-    },
-    {
-      "id": 7,
-      "type": "stat",
-      "title": "Maior saturação % AO atingir T1 Alvo em TESP2",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "efcqeppjazvgga"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 19,
-        "w": 6,
-        "h": 6
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "efcqeppjazvgga"
-          },
-          "query": "import \"math\"\n\nsite = \"TESP2\"\nalvo_t1 = float(v: ${alvo_tesp2})\n\nper_ind = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> pivot(rowKey: [\"site\",\"usage_type\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nt1_now_raw = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> findRecord(fn: (key) => true, idx: 0)\n\natual_t1 = if exists t1_now_raw._value and t1_now_raw._value > 0.0 then t1_now_raw._value else 1.0\ndelta_t1 = alvo_t1 - atual_t1\n\nper_ind\n  |> map(fn: (r) => ({r with sat: math.round(x: (r.current_usage + (r.current_usage / atual_t1) * delta_t1) / r.max_supported * 100.0 * 100.0) / 100.0}))\n  |> keep(columns: [\"site\",\"sat\"])\n  |> max(column: \"sat\")\n  |> rename(columns: {sat: \"_value\", site: \"_field\"})",
-          "refId": "A",
-          "hide": false
-        }
-      ],
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "textMode": "value_and_name",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "min": 0,
-          "max": 120,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 70
-              },
-              {
-                "color": "orange",
-                "value": 85
-              },
-              {
-                "color": "red",
-                "value": 100
-              }
-            ]
-          }
-        }
-      }
-    },
-    {
-      "id": 8,
-      "type": "stat",
-      "title": "T1 Atual / Alvo em TESP2",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "efcqeppjazvgga"
-      },
-      "gridPos": {
-        "x": 18,
-        "y": 19,
-        "w": 6,
-        "h": 6
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "efcqeppjazvgga"
-          },
-          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == \"TESP2\")\n  |> last()\n  |> keep(columns: [\"site\",\"_value\"])\n  |> rename(columns: {site: \"_field\"})",
-          "refId": "A",
-          "hide": false
-        }
-      ],
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "textMode": "value_and_name",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        }
-      }
-    },
-    {
-      "id": 9,
       "type": "table",
-      "title": "📋 TESP2 — Indicadores NSX detalhados (formato planilha)",
+      "title": "TESP2 — Indicadores NSX (Limite, Atual, Por cliente, Projeção, Final, Saturação, Sobra, Clientes Possíveis)",
       "datasource": {
         "type": "influxdb",
         "uid": "efcqeppjazvgga"
       },
       "gridPos": {
         "x": 0,
-        "y": 25,
+        "y": 18,
         "w": 24,
         "h": 9
       },
@@ -470,7 +246,7 @@
             "type": "influxdb",
             "uid": "efcqeppjazvgga"
           },
-          "query": "import \"math\"\n\nsite = \"TESP2\"\nalvo_t1 = float(v: ${alvo_tesp2})\n\nper_ind = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> pivot(rowKey: [\"site\",\"usage_type\",\"display_name\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> keep(columns: [\"site\",\"usage_type\",\"display_name\",\"current_usage\",\"max_supported\"])\n\nt1_now_raw = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> findRecord(fn: (key) => true, idx: 0)\n\natual_t1 = if exists t1_now_raw._value and t1_now_raw._value > 0.0 then t1_now_raw._value else 1.0\ndelta_t1 = alvo_t1 - atual_t1\n\nper_ind\n  |> map(fn: (r) => ({r with\n         por_cliente:        math.round(x: r.current_usage / atual_t1 * 100.0) / 100.0,\n         projecao:           math.round(x: (r.current_usage / atual_t1) * delta_t1),\n         numero_final:       math.round(x: r.current_usage + (r.current_usage / atual_t1) * delta_t1),\n         saturacao_pct:      math.round(x: (r.current_usage + (r.current_usage / atual_t1) * delta_t1) / r.max_supported * 100.0 * 100.0) / 100.0,\n         sobra:              math.round(x: r.max_supported - (r.current_usage + (r.current_usage / atual_t1) * delta_t1)),\n         max_clientes:       (if r.current_usage > 0.0 then math.round(x: r.max_supported * atual_t1 / r.current_usage) else 0.0),\n         clientes_possiveis: (if r.current_usage > 0.0 then math.round(x: (r.max_supported * atual_t1 / r.current_usage) - atual_t1) else 0.0),\n       }))\n  |> keep(columns: [\"site\",\"display_name\",\"max_supported\",\"current_usage\",\"por_cliente\",\"projecao\",\"numero_final\",\"saturacao_pct\",\"sobra\",\"max_clientes\",\"clientes_possiveis\"])\n  |> rename(columns: {\n         display_name:       \"Indicador\",\n         max_supported:      \"Limite NSX\",\n         current_usage:      \"Atual\",\n         por_cliente:        \"Por cliente\",\n         projecao:           \"Projeção (até alvo)\",\n         numero_final:       \"Final ao atingir alvo\",\n         saturacao_pct:      \"Saturação ao alvo (%)\",\n         sobra:              \"Sobra ao alvo\",\n         max_clientes:       \"Max clientes (este limite)\",\n         clientes_possiveis: \"Clientes Possíveis (deste limite)\",\n       })\n  |> sort(columns: [\"Saturação ao alvo (%)\"], desc: true)",
+          "query": "import \"math\"\n\nsite = \"TESP2\"\nalvo_t1 = float(v: ${alvo_tesp2})\n\n// Pega current + max por usage_type. rowKey só usage_type ⇒ 1 linha por dimensão.\nper_ind = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r.site == site)\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> keep(columns: [\"usage_type\",\"_field\",\"_value\"])\n  |> pivot(rowKey: [\"usage_type\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\n// Pega Atual T1 do mesmo site como escalar (denominador do \"Por cliente\").\nt1_now = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.site == site)\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\natual_t1 = if exists t1_now._value and float(v: t1_now._value) > 0.0 then float(v: t1_now._value) else 1.0\ndelta_t1 = alvo_t1 - atual_t1\n\nper_ind\n  |> map(fn: (r) => ({r with\n         Indicador: (if r.usage_type == \"NUMBER_OF_LOGICAL_SWITCHES\" then \"Segments\" else if r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\" then \"T1\" else if r.usage_type == \"NUMBER_OF_NAT_RULES\" then \"System-wide NAT\" else if r.usage_type == \"NUMBER_OF_LOGICAL_PORTS\" then \"System-wide Logical Switch Ports\" else if r.usage_type == \"NUMBER_OF_GROUPS_BASED_ON_IP_SETS\" then \"Groups Based on IP Sets\" else r.usage_type),\n         por_cliente:        math.round(x: r.current_usage / atual_t1 * 100.0) / 100.0,\n         projecao:           math.round(x: (r.current_usage / atual_t1) * delta_t1),\n         numero_final:       math.round(x: r.current_usage + (r.current_usage / atual_t1) * delta_t1),\n         saturacao_pct:      math.round(x: (r.current_usage + (r.current_usage / atual_t1) * delta_t1) / r.max_supported * 1000.0) / 10.0,\n         sobra:              math.round(x: r.max_supported - (r.current_usage + (r.current_usage / atual_t1) * delta_t1)),\n         max_clientes:       (if r.current_usage > 0.0 then math.round(x: r.max_supported * atual_t1 / r.current_usage) else 0.0),\n         clientes_possiveis: (if r.current_usage > 0.0 then math.round(x: (r.max_supported * atual_t1 / r.current_usage) - atual_t1) else 0.0),\n       }))\n  |> keep(columns: [\"Indicador\",\"max_supported\",\"current_usage\",\"por_cliente\",\"projecao\",\"numero_final\",\"saturacao_pct\",\"sobra\",\"max_clientes\",\"clientes_possiveis\"])\n  |> rename(columns: {\n         max_supported:      \"Limite NSX\",\n         current_usage:      \"Nº Atual\",\n         por_cliente:        \"Por cliente\",\n         projecao:           \"Projeção\",\n         numero_final:       \"Número final\",\n         saturacao_pct:      \"Saturação ao alvo (%)\",\n         sobra:              \"Sobra\",\n         max_clientes:       \"Max clientes\",\n         clientes_possiveis: \"Clientes Possíveis\",\n       })\n  |> sort(columns: [\"Saturação ao alvo (%)\"], desc: true)\n  |> group()",
           "refId": "A",
           "hide": false
         }
@@ -480,15 +256,708 @@
         "footer": {
           "show": false
         }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Saturação ao alvo (%)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 70
+                    },
+                    {
+                      "color": "orange",
+                      "value": 85
+                    },
+                    {
+                      "color": "red",
+                      "value": 100
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Clientes Possíveis"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 1
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 50
+                    },
+                    {
+                      "color": "green",
+                      "value": 150
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Sobra"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 500
+                    },
+                    {
+                      "color": "green",
+                      "value": 2000
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Limite NSX"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Nº Atual"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Projeção"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Número final"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Max clientes"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 6,
+      "type": "row",
+      "title": "━━━ TESP3 ━━━   T1 Alvo: ${alvo_tesp3}",
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "TESP3 — Indicadores NSX (Limite, Atual, Por cliente, Projeção, Final, Saturação, Sobra, Clientes Possíveis)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "import \"math\"\n\nsite = \"TESP3\"\nalvo_t1 = float(v: ${alvo_tesp3})\n\n// Pega current + max por usage_type. rowKey só usage_type ⇒ 1 linha por dimensão.\nper_ind = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r.site == site)\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> keep(columns: [\"usage_type\",\"_field\",\"_value\"])\n  |> pivot(rowKey: [\"usage_type\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\n// Pega Atual T1 do mesmo site como escalar (denominador do \"Por cliente\").\nt1_now = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.site == site)\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\natual_t1 = if exists t1_now._value and float(v: t1_now._value) > 0.0 then float(v: t1_now._value) else 1.0\ndelta_t1 = alvo_t1 - atual_t1\n\nper_ind\n  |> map(fn: (r) => ({r with\n         Indicador: (if r.usage_type == \"NUMBER_OF_LOGICAL_SWITCHES\" then \"Segments\" else if r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\" then \"T1\" else if r.usage_type == \"NUMBER_OF_NAT_RULES\" then \"System-wide NAT\" else if r.usage_type == \"NUMBER_OF_LOGICAL_PORTS\" then \"System-wide Logical Switch Ports\" else if r.usage_type == \"NUMBER_OF_GROUPS_BASED_ON_IP_SETS\" then \"Groups Based on IP Sets\" else r.usage_type),\n         por_cliente:        math.round(x: r.current_usage / atual_t1 * 100.0) / 100.0,\n         projecao:           math.round(x: (r.current_usage / atual_t1) * delta_t1),\n         numero_final:       math.round(x: r.current_usage + (r.current_usage / atual_t1) * delta_t1),\n         saturacao_pct:      math.round(x: (r.current_usage + (r.current_usage / atual_t1) * delta_t1) / r.max_supported * 1000.0) / 10.0,\n         sobra:              math.round(x: r.max_supported - (r.current_usage + (r.current_usage / atual_t1) * delta_t1)),\n         max_clientes:       (if r.current_usage > 0.0 then math.round(x: r.max_supported * atual_t1 / r.current_usage) else 0.0),\n         clientes_possiveis: (if r.current_usage > 0.0 then math.round(x: (r.max_supported * atual_t1 / r.current_usage) - atual_t1) else 0.0),\n       }))\n  |> keep(columns: [\"Indicador\",\"max_supported\",\"current_usage\",\"por_cliente\",\"projecao\",\"numero_final\",\"saturacao_pct\",\"sobra\",\"max_clientes\",\"clientes_possiveis\"])\n  |> rename(columns: {\n         max_supported:      \"Limite NSX\",\n         current_usage:      \"Nº Atual\",\n         por_cliente:        \"Por cliente\",\n         projecao:           \"Projeção\",\n         numero_final:       \"Número final\",\n         saturacao_pct:      \"Saturação ao alvo (%)\",\n         sobra:              \"Sobra\",\n         max_clientes:       \"Max clientes\",\n         clientes_possiveis: \"Clientes Possíveis\",\n       })\n  |> sort(columns: [\"Saturação ao alvo (%)\"], desc: true)\n  |> group()",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Saturação ao alvo (%)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 70
+                    },
+                    {
+                      "color": "orange",
+                      "value": 85
+                    },
+                    {
+                      "color": "red",
+                      "value": 100
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Clientes Possíveis"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 1
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 50
+                    },
+                    {
+                      "color": "green",
+                      "value": 150
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Sobra"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 500
+                    },
+                    {
+                      "color": "green",
+                      "value": 2000
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Limite NSX"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Nº Atual"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Projeção"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Número final"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Max clientes"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 8,
+      "type": "row",
+      "title": "━━━ TESP5 ━━━   T1 Alvo: ${alvo_tesp5}",
+      "gridPos": {
+        "x": 0,
+        "y": 37,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "TESP5 — Indicadores NSX (Limite, Atual, Por cliente, Projeção, Final, Saturação, Sobra, Clientes Possíveis)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "efcqeppjazvgga"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 38,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "efcqeppjazvgga"
+          },
+          "query": "import \"math\"\n\nsite = \"TESP5\"\nalvo_t1 = float(v: ${alvo_tesp5})\n\n// Pega current + max por usage_type. rowKey só usage_type ⇒ 1 linha por dimensão.\nper_ind = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r.site == site)\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> keep(columns: [\"usage_type\",\"_field\",\"_value\"])\n  |> pivot(rowKey: [\"usage_type\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\n// Pega Atual T1 do mesmo site como escalar (denominador do \"Por cliente\").\nt1_now = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.site == site)\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\natual_t1 = if exists t1_now._value and float(v: t1_now._value) > 0.0 then float(v: t1_now._value) else 1.0\ndelta_t1 = alvo_t1 - atual_t1\n\nper_ind\n  |> map(fn: (r) => ({r with\n         Indicador: (if r.usage_type == \"NUMBER_OF_LOGICAL_SWITCHES\" then \"Segments\" else if r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\" then \"T1\" else if r.usage_type == \"NUMBER_OF_NAT_RULES\" then \"System-wide NAT\" else if r.usage_type == \"NUMBER_OF_LOGICAL_PORTS\" then \"System-wide Logical Switch Ports\" else if r.usage_type == \"NUMBER_OF_GROUPS_BASED_ON_IP_SETS\" then \"Groups Based on IP Sets\" else r.usage_type),\n         por_cliente:        math.round(x: r.current_usage / atual_t1 * 100.0) / 100.0,\n         projecao:           math.round(x: (r.current_usage / atual_t1) * delta_t1),\n         numero_final:       math.round(x: r.current_usage + (r.current_usage / atual_t1) * delta_t1),\n         saturacao_pct:      math.round(x: (r.current_usage + (r.current_usage / atual_t1) * delta_t1) / r.max_supported * 1000.0) / 10.0,\n         sobra:              math.round(x: r.max_supported - (r.current_usage + (r.current_usage / atual_t1) * delta_t1)),\n         max_clientes:       (if r.current_usage > 0.0 then math.round(x: r.max_supported * atual_t1 / r.current_usage) else 0.0),\n         clientes_possiveis: (if r.current_usage > 0.0 then math.round(x: (r.max_supported * atual_t1 / r.current_usage) - atual_t1) else 0.0),\n       }))\n  |> keep(columns: [\"Indicador\",\"max_supported\",\"current_usage\",\"por_cliente\",\"projecao\",\"numero_final\",\"saturacao_pct\",\"sobra\",\"max_clientes\",\"clientes_possiveis\"])\n  |> rename(columns: {\n         max_supported:      \"Limite NSX\",\n         current_usage:      \"Nº Atual\",\n         por_cliente:        \"Por cliente\",\n         projecao:           \"Projeção\",\n         numero_final:       \"Número final\",\n         saturacao_pct:      \"Saturação ao alvo (%)\",\n         sobra:              \"Sobra\",\n         max_clientes:       \"Max clientes\",\n         clientes_possiveis: \"Clientes Possíveis\",\n       })\n  |> sort(columns: [\"Saturação ao alvo (%)\"], desc: true)\n  |> group()",
+          "refId": "A",
+          "hide": false
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Saturação ao alvo (%)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 70
+                    },
+                    {
+                      "color": "orange",
+                      "value": 85
+                    },
+                    {
+                      "color": "red",
+                      "value": 100
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Clientes Possíveis"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 1
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 50
+                    },
+                    {
+                      "color": "green",
+                      "value": 150
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Sobra"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 500
+                    },
+                    {
+                      "color": "green",
+                      "value": 2000
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Limite NSX"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Nº Atual"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Projeção"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Número final"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Max clientes"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          }
+        ]
       }
     },
     {
       "id": 10,
       "type": "row",
-      "title": "━━━ TESP3 ━━━  (T1 Alvo = ${alvo_tesp3})",
+      "title": "━━━ TESP6 ━━━   T1 Alvo: ${alvo_tesp6}",
       "gridPos": {
         "x": 0,
-        "y": 34,
+        "y": 47,
         "w": 24,
         "h": 1
       },
@@ -497,17 +966,17 @@
     },
     {
       "id": 11,
-      "type": "stat",
-      "title": "Clientes Possíveis em TESP3",
+      "type": "table",
+      "title": "TESP6 — Indicadores NSX (Limite, Atual, Por cliente, Projeção, Final, Saturação, Sobra, Clientes Possíveis)",
       "datasource": {
         "type": "influxdb",
         "uid": "efcqeppjazvgga"
       },
       "gridPos": {
         "x": 0,
-        "y": 35,
-        "w": 6,
-        "h": 6
+        "y": 48,
+        "w": 24,
+        "h": 9
       },
       "targets": [
         {
@@ -515,747 +984,243 @@
             "type": "influxdb",
             "uid": "efcqeppjazvgga"
           },
-          "query": "import \"math\"\n\nsite = \"TESP3\"\nalvo_t1 = float(v: ${alvo_tesp3})\n\nper_ind = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> pivot(rowKey: [\"site\",\"usage_type\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nt1_now_raw = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> findRecord(fn: (key) => true, idx: 0)\n\natual_t1 = if exists t1_now_raw._value and t1_now_raw._value > 0.0 then t1_now_raw._value else 1.0\n\nper_ind\n  |> map(fn: (r) => ({r with cp: (if r.current_usage > 0.0 then (r.max_supported * atual_t1 / r.current_usage) - atual_t1 else 0.0)}))\n  |> keep(columns: [\"site\",\"cp\"])\n  |> min(column: \"cp\")\n  |> rename(columns: {cp: \"_value\", site: \"_field\"})",
+          "query": "import \"math\"\n\nsite = \"TESP6\"\nalvo_t1 = float(v: ${alvo_tesp6})\n\n// Pega current + max por usage_type. rowKey só usage_type ⇒ 1 linha por dimensão.\nper_ind = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r.site == site)\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> keep(columns: [\"usage_type\",\"_field\",\"_value\"])\n  |> pivot(rowKey: [\"usage_type\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\n// Pega Atual T1 do mesmo site como escalar (denominador do \"Por cliente\").\nt1_now = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.site == site)\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\natual_t1 = if exists t1_now._value and float(v: t1_now._value) > 0.0 then float(v: t1_now._value) else 1.0\ndelta_t1 = alvo_t1 - atual_t1\n\nper_ind\n  |> map(fn: (r) => ({r with\n         Indicador: (if r.usage_type == \"NUMBER_OF_LOGICAL_SWITCHES\" then \"Segments\" else if r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\" then \"T1\" else if r.usage_type == \"NUMBER_OF_NAT_RULES\" then \"System-wide NAT\" else if r.usage_type == \"NUMBER_OF_LOGICAL_PORTS\" then \"System-wide Logical Switch Ports\" else if r.usage_type == \"NUMBER_OF_GROUPS_BASED_ON_IP_SETS\" then \"Groups Based on IP Sets\" else r.usage_type),\n         por_cliente:        math.round(x: r.current_usage / atual_t1 * 100.0) / 100.0,\n         projecao:           math.round(x: (r.current_usage / atual_t1) * delta_t1),\n         numero_final:       math.round(x: r.current_usage + (r.current_usage / atual_t1) * delta_t1),\n         saturacao_pct:      math.round(x: (r.current_usage + (r.current_usage / atual_t1) * delta_t1) / r.max_supported * 1000.0) / 10.0,\n         sobra:              math.round(x: r.max_supported - (r.current_usage + (r.current_usage / atual_t1) * delta_t1)),\n         max_clientes:       (if r.current_usage > 0.0 then math.round(x: r.max_supported * atual_t1 / r.current_usage) else 0.0),\n         clientes_possiveis: (if r.current_usage > 0.0 then math.round(x: (r.max_supported * atual_t1 / r.current_usage) - atual_t1) else 0.0),\n       }))\n  |> keep(columns: [\"Indicador\",\"max_supported\",\"current_usage\",\"por_cliente\",\"projecao\",\"numero_final\",\"saturacao_pct\",\"sobra\",\"max_clientes\",\"clientes_possiveis\"])\n  |> rename(columns: {\n         max_supported:      \"Limite NSX\",\n         current_usage:      \"Nº Atual\",\n         por_cliente:        \"Por cliente\",\n         projecao:           \"Projeção\",\n         numero_final:       \"Número final\",\n         saturacao_pct:      \"Saturação ao alvo (%)\",\n         sobra:              \"Sobra\",\n         max_clientes:       \"Max clientes\",\n         clientes_possiveis: \"Clientes Possíveis\",\n       })\n  |> sort(columns: [\"Saturação ao alvo (%)\"], desc: true)\n  |> group()",
           "refId": "A",
           "hide": false
         }
       ],
       "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "textMode": "value_and_name",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
+        "showHeader": true,
+        "footer": {
+          "show": false
         }
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Saturação ao alvo (%)"
+            },
+            "properties": [
               {
-                "color": "red",
-                "value": null
+                "id": "unit",
+                "value": "percent"
               },
               {
-                "color": "orange",
-                "value": 1
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 70
+                    },
+                    {
+                      "color": "orange",
+                      "value": 85
+                    },
+                    {
+                      "color": "red",
+                      "value": 100
+                    }
+                  ]
+                }
               },
               {
-                "color": "yellow",
-                "value": 50
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Clientes Possíveis"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
               },
               {
-                "color": "green",
-                "value": 150
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 1
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 50
+                    },
+                    {
+                      "color": "green",
+                      "value": 150
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Sobra"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 500
+                    },
+                    {
+                      "color": "green",
+                      "value": 2000
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Limite NSX"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Nº Atual"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Projeção"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Número final"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Max clientes"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
               }
             ]
           }
-        }
+        ]
       }
     },
     {
       "id": 12,
-      "type": "stat",
-      "title": "Indicador que mais limita em TESP3",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "efcqeppjazvgga"
-      },
-      "gridPos": {
-        "x": 6,
-        "y": 35,
-        "w": 6,
-        "h": 6
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "efcqeppjazvgga"
-          },
-          "query": "import \"math\"\n\nsite = \"TESP3\"\n\nper_ind = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> pivot(rowKey: [\"site\",\"usage_type\",\"display_name\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nt1_now_raw = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> findRecord(fn: (key) => true, idx: 0)\n\natual_t1 = if exists t1_now_raw._value and t1_now_raw._value > 0.0 then t1_now_raw._value else 1.0\n\nper_ind\n  |> map(fn: (r) => ({r with cp: (if r.current_usage > 0.0 then (r.max_supported * atual_t1 / r.current_usage) - atual_t1 else 0.0)}))\n  |> keep(columns: [\"site\",\"display_name\",\"cp\"])\n  |> sort(columns: [\"cp\"], desc: false)\n  |> limit(n: 1)\n  |> rename(columns: {display_name: \"_value\", site: \"_field\"})\n  |> keep(columns: [\"_value\",\"_field\"])",
-          "refId": "A",
-          "hide": false
-        }
-      ],
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "textMode": "value_and_name",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "string"
-        }
-      }
-    },
-    {
-      "id": 13,
-      "type": "stat",
-      "title": "Maior saturação % AO atingir T1 Alvo em TESP3",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "efcqeppjazvgga"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 35,
-        "w": 6,
-        "h": 6
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "efcqeppjazvgga"
-          },
-          "query": "import \"math\"\n\nsite = \"TESP3\"\nalvo_t1 = float(v: ${alvo_tesp3})\n\nper_ind = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> pivot(rowKey: [\"site\",\"usage_type\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nt1_now_raw = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> findRecord(fn: (key) => true, idx: 0)\n\natual_t1 = if exists t1_now_raw._value and t1_now_raw._value > 0.0 then t1_now_raw._value else 1.0\ndelta_t1 = alvo_t1 - atual_t1\n\nper_ind\n  |> map(fn: (r) => ({r with sat: math.round(x: (r.current_usage + (r.current_usage / atual_t1) * delta_t1) / r.max_supported * 100.0 * 100.0) / 100.0}))\n  |> keep(columns: [\"site\",\"sat\"])\n  |> max(column: \"sat\")\n  |> rename(columns: {sat: \"_value\", site: \"_field\"})",
-          "refId": "A",
-          "hide": false
-        }
-      ],
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "textMode": "value_and_name",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "min": 0,
-          "max": 120,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 70
-              },
-              {
-                "color": "orange",
-                "value": 85
-              },
-              {
-                "color": "red",
-                "value": 100
-              }
-            ]
-          }
-        }
-      }
-    },
-    {
-      "id": 14,
-      "type": "stat",
-      "title": "T1 Atual / Alvo em TESP3",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "efcqeppjazvgga"
-      },
-      "gridPos": {
-        "x": 18,
-        "y": 35,
-        "w": 6,
-        "h": 6
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "efcqeppjazvgga"
-          },
-          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == \"TESP3\")\n  |> last()\n  |> keep(columns: [\"site\",\"_value\"])\n  |> rename(columns: {site: \"_field\"})",
-          "refId": "A",
-          "hide": false
-        }
-      ],
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "textMode": "value_and_name",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        }
-      }
-    },
-    {
-      "id": 15,
-      "type": "table",
-      "title": "📋 TESP3 — Indicadores NSX detalhados (formato planilha)",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "efcqeppjazvgga"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 41,
-        "w": 24,
-        "h": 9
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "efcqeppjazvgga"
-          },
-          "query": "import \"math\"\n\nsite = \"TESP3\"\nalvo_t1 = float(v: ${alvo_tesp3})\n\nper_ind = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> pivot(rowKey: [\"site\",\"usage_type\",\"display_name\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> keep(columns: [\"site\",\"usage_type\",\"display_name\",\"current_usage\",\"max_supported\"])\n\nt1_now_raw = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> findRecord(fn: (key) => true, idx: 0)\n\natual_t1 = if exists t1_now_raw._value and t1_now_raw._value > 0.0 then t1_now_raw._value else 1.0\ndelta_t1 = alvo_t1 - atual_t1\n\nper_ind\n  |> map(fn: (r) => ({r with\n         por_cliente:        math.round(x: r.current_usage / atual_t1 * 100.0) / 100.0,\n         projecao:           math.round(x: (r.current_usage / atual_t1) * delta_t1),\n         numero_final:       math.round(x: r.current_usage + (r.current_usage / atual_t1) * delta_t1),\n         saturacao_pct:      math.round(x: (r.current_usage + (r.current_usage / atual_t1) * delta_t1) / r.max_supported * 100.0 * 100.0) / 100.0,\n         sobra:              math.round(x: r.max_supported - (r.current_usage + (r.current_usage / atual_t1) * delta_t1)),\n         max_clientes:       (if r.current_usage > 0.0 then math.round(x: r.max_supported * atual_t1 / r.current_usage) else 0.0),\n         clientes_possiveis: (if r.current_usage > 0.0 then math.round(x: (r.max_supported * atual_t1 / r.current_usage) - atual_t1) else 0.0),\n       }))\n  |> keep(columns: [\"site\",\"display_name\",\"max_supported\",\"current_usage\",\"por_cliente\",\"projecao\",\"numero_final\",\"saturacao_pct\",\"sobra\",\"max_clientes\",\"clientes_possiveis\"])\n  |> rename(columns: {\n         display_name:       \"Indicador\",\n         max_supported:      \"Limite NSX\",\n         current_usage:      \"Atual\",\n         por_cliente:        \"Por cliente\",\n         projecao:           \"Projeção (até alvo)\",\n         numero_final:       \"Final ao atingir alvo\",\n         saturacao_pct:      \"Saturação ao alvo (%)\",\n         sobra:              \"Sobra ao alvo\",\n         max_clientes:       \"Max clientes (este limite)\",\n         clientes_possiveis: \"Clientes Possíveis (deste limite)\",\n       })\n  |> sort(columns: [\"Saturação ao alvo (%)\"], desc: true)",
-          "refId": "A",
-          "hide": false
-        }
-      ],
-      "options": {
-        "showHeader": true,
-        "footer": {
-          "show": false
-        }
-      }
-    },
-    {
-      "id": 16,
       "type": "row",
-      "title": "━━━ TESP5 ━━━  (T1 Alvo = ${alvo_tesp5})",
-      "gridPos": {
-        "x": 0,
-        "y": 50,
-        "w": 24,
-        "h": 1
-      },
-      "collapsed": false,
-      "panels": []
-    },
-    {
-      "id": 17,
-      "type": "stat",
-      "title": "Clientes Possíveis em TESP5",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "efcqeppjazvgga"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 51,
-        "w": 6,
-        "h": 6
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "efcqeppjazvgga"
-          },
-          "query": "import \"math\"\n\nsite = \"TESP5\"\nalvo_t1 = float(v: ${alvo_tesp5})\n\nper_ind = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> pivot(rowKey: [\"site\",\"usage_type\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nt1_now_raw = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> findRecord(fn: (key) => true, idx: 0)\n\natual_t1 = if exists t1_now_raw._value and t1_now_raw._value > 0.0 then t1_now_raw._value else 1.0\n\nper_ind\n  |> map(fn: (r) => ({r with cp: (if r.current_usage > 0.0 then (r.max_supported * atual_t1 / r.current_usage) - atual_t1 else 0.0)}))\n  |> keep(columns: [\"site\",\"cp\"])\n  |> min(column: \"cp\")\n  |> rename(columns: {cp: \"_value\", site: \"_field\"})",
-          "refId": "A",
-          "hide": false
-        }
-      ],
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "textMode": "value_and_name",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 1
-              },
-              {
-                "color": "yellow",
-                "value": 50
-              },
-              {
-                "color": "green",
-                "value": 150
-              }
-            ]
-          }
-        }
-      }
-    },
-    {
-      "id": 18,
-      "type": "stat",
-      "title": "Indicador que mais limita em TESP5",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "efcqeppjazvgga"
-      },
-      "gridPos": {
-        "x": 6,
-        "y": 51,
-        "w": 6,
-        "h": 6
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "efcqeppjazvgga"
-          },
-          "query": "import \"math\"\n\nsite = \"TESP5\"\n\nper_ind = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> pivot(rowKey: [\"site\",\"usage_type\",\"display_name\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nt1_now_raw = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> findRecord(fn: (key) => true, idx: 0)\n\natual_t1 = if exists t1_now_raw._value and t1_now_raw._value > 0.0 then t1_now_raw._value else 1.0\n\nper_ind\n  |> map(fn: (r) => ({r with cp: (if r.current_usage > 0.0 then (r.max_supported * atual_t1 / r.current_usage) - atual_t1 else 0.0)}))\n  |> keep(columns: [\"site\",\"display_name\",\"cp\"])\n  |> sort(columns: [\"cp\"], desc: false)\n  |> limit(n: 1)\n  |> rename(columns: {display_name: \"_value\", site: \"_field\"})\n  |> keep(columns: [\"_value\",\"_field\"])",
-          "refId": "A",
-          "hide": false
-        }
-      ],
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "textMode": "value_and_name",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "string"
-        }
-      }
-    },
-    {
-      "id": 19,
-      "type": "stat",
-      "title": "Maior saturação % AO atingir T1 Alvo em TESP5",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "efcqeppjazvgga"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 51,
-        "w": 6,
-        "h": 6
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "efcqeppjazvgga"
-          },
-          "query": "import \"math\"\n\nsite = \"TESP5\"\nalvo_t1 = float(v: ${alvo_tesp5})\n\nper_ind = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> pivot(rowKey: [\"site\",\"usage_type\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nt1_now_raw = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> findRecord(fn: (key) => true, idx: 0)\n\natual_t1 = if exists t1_now_raw._value and t1_now_raw._value > 0.0 then t1_now_raw._value else 1.0\ndelta_t1 = alvo_t1 - atual_t1\n\nper_ind\n  |> map(fn: (r) => ({r with sat: math.round(x: (r.current_usage + (r.current_usage / atual_t1) * delta_t1) / r.max_supported * 100.0 * 100.0) / 100.0}))\n  |> keep(columns: [\"site\",\"sat\"])\n  |> max(column: \"sat\")\n  |> rename(columns: {sat: \"_value\", site: \"_field\"})",
-          "refId": "A",
-          "hide": false
-        }
-      ],
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "textMode": "value_and_name",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "min": 0,
-          "max": 120,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 70
-              },
-              {
-                "color": "orange",
-                "value": 85
-              },
-              {
-                "color": "red",
-                "value": 100
-              }
-            ]
-          }
-        }
-      }
-    },
-    {
-      "id": 20,
-      "type": "stat",
-      "title": "T1 Atual / Alvo em TESP5",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "efcqeppjazvgga"
-      },
-      "gridPos": {
-        "x": 18,
-        "y": 51,
-        "w": 6,
-        "h": 6
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "efcqeppjazvgga"
-          },
-          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == \"TESP5\")\n  |> last()\n  |> keep(columns: [\"site\",\"_value\"])\n  |> rename(columns: {site: \"_field\"})",
-          "refId": "A",
-          "hide": false
-        }
-      ],
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "textMode": "value_and_name",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        }
-      }
-    },
-    {
-      "id": 21,
-      "type": "table",
-      "title": "📋 TESP5 — Indicadores NSX detalhados (formato planilha)",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "efcqeppjazvgga"
-      },
+      "title": "━━━ TESP7 ━━━   T1 Alvo: ${alvo_tesp7}",
       "gridPos": {
         "x": 0,
         "y": 57,
         "w": 24,
-        "h": 9
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "efcqeppjazvgga"
-          },
-          "query": "import \"math\"\n\nsite = \"TESP5\"\nalvo_t1 = float(v: ${alvo_tesp5})\n\nper_ind = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> pivot(rowKey: [\"site\",\"usage_type\",\"display_name\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> keep(columns: [\"site\",\"usage_type\",\"display_name\",\"current_usage\",\"max_supported\"])\n\nt1_now_raw = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> findRecord(fn: (key) => true, idx: 0)\n\natual_t1 = if exists t1_now_raw._value and t1_now_raw._value > 0.0 then t1_now_raw._value else 1.0\ndelta_t1 = alvo_t1 - atual_t1\n\nper_ind\n  |> map(fn: (r) => ({r with\n         por_cliente:        math.round(x: r.current_usage / atual_t1 * 100.0) / 100.0,\n         projecao:           math.round(x: (r.current_usage / atual_t1) * delta_t1),\n         numero_final:       math.round(x: r.current_usage + (r.current_usage / atual_t1) * delta_t1),\n         saturacao_pct:      math.round(x: (r.current_usage + (r.current_usage / atual_t1) * delta_t1) / r.max_supported * 100.0 * 100.0) / 100.0,\n         sobra:              math.round(x: r.max_supported - (r.current_usage + (r.current_usage / atual_t1) * delta_t1)),\n         max_clientes:       (if r.current_usage > 0.0 then math.round(x: r.max_supported * atual_t1 / r.current_usage) else 0.0),\n         clientes_possiveis: (if r.current_usage > 0.0 then math.round(x: (r.max_supported * atual_t1 / r.current_usage) - atual_t1) else 0.0),\n       }))\n  |> keep(columns: [\"site\",\"display_name\",\"max_supported\",\"current_usage\",\"por_cliente\",\"projecao\",\"numero_final\",\"saturacao_pct\",\"sobra\",\"max_clientes\",\"clientes_possiveis\"])\n  |> rename(columns: {\n         display_name:       \"Indicador\",\n         max_supported:      \"Limite NSX\",\n         current_usage:      \"Atual\",\n         por_cliente:        \"Por cliente\",\n         projecao:           \"Projeção (até alvo)\",\n         numero_final:       \"Final ao atingir alvo\",\n         saturacao_pct:      \"Saturação ao alvo (%)\",\n         sobra:              \"Sobra ao alvo\",\n         max_clientes:       \"Max clientes (este limite)\",\n         clientes_possiveis: \"Clientes Possíveis (deste limite)\",\n       })\n  |> sort(columns: [\"Saturação ao alvo (%)\"], desc: true)",
-          "refId": "A",
-          "hide": false
-        }
-      ],
-      "options": {
-        "showHeader": true,
-        "footer": {
-          "show": false
-        }
-      }
-    },
-    {
-      "id": 22,
-      "type": "row",
-      "title": "━━━ TESP6 ━━━  (T1 Alvo = ${alvo_tesp6})",
-      "gridPos": {
-        "x": 0,
-        "y": 66,
-        "w": 24,
         "h": 1
       },
       "collapsed": false,
       "panels": []
     },
     {
-      "id": 23,
-      "type": "stat",
-      "title": "Clientes Possíveis em TESP6",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "efcqeppjazvgga"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 67,
-        "w": 6,
-        "h": 6
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "efcqeppjazvgga"
-          },
-          "query": "import \"math\"\n\nsite = \"TESP6\"\nalvo_t1 = float(v: ${alvo_tesp6})\n\nper_ind = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> pivot(rowKey: [\"site\",\"usage_type\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nt1_now_raw = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> findRecord(fn: (key) => true, idx: 0)\n\natual_t1 = if exists t1_now_raw._value and t1_now_raw._value > 0.0 then t1_now_raw._value else 1.0\n\nper_ind\n  |> map(fn: (r) => ({r with cp: (if r.current_usage > 0.0 then (r.max_supported * atual_t1 / r.current_usage) - atual_t1 else 0.0)}))\n  |> keep(columns: [\"site\",\"cp\"])\n  |> min(column: \"cp\")\n  |> rename(columns: {cp: \"_value\", site: \"_field\"})",
-          "refId": "A",
-          "hide": false
-        }
-      ],
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "textMode": "value_and_name",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 1
-              },
-              {
-                "color": "yellow",
-                "value": 50
-              },
-              {
-                "color": "green",
-                "value": 150
-              }
-            ]
-          }
-        }
-      }
-    },
-    {
-      "id": 24,
-      "type": "stat",
-      "title": "Indicador que mais limita em TESP6",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "efcqeppjazvgga"
-      },
-      "gridPos": {
-        "x": 6,
-        "y": 67,
-        "w": 6,
-        "h": 6
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "efcqeppjazvgga"
-          },
-          "query": "import \"math\"\n\nsite = \"TESP6\"\n\nper_ind = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> pivot(rowKey: [\"site\",\"usage_type\",\"display_name\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nt1_now_raw = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> findRecord(fn: (key) => true, idx: 0)\n\natual_t1 = if exists t1_now_raw._value and t1_now_raw._value > 0.0 then t1_now_raw._value else 1.0\n\nper_ind\n  |> map(fn: (r) => ({r with cp: (if r.current_usage > 0.0 then (r.max_supported * atual_t1 / r.current_usage) - atual_t1 else 0.0)}))\n  |> keep(columns: [\"site\",\"display_name\",\"cp\"])\n  |> sort(columns: [\"cp\"], desc: false)\n  |> limit(n: 1)\n  |> rename(columns: {display_name: \"_value\", site: \"_field\"})\n  |> keep(columns: [\"_value\",\"_field\"])",
-          "refId": "A",
-          "hide": false
-        }
-      ],
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "textMode": "value_and_name",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "string"
-        }
-      }
-    },
-    {
-      "id": 25,
-      "type": "stat",
-      "title": "Maior saturação % AO atingir T1 Alvo em TESP6",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "efcqeppjazvgga"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 67,
-        "w": 6,
-        "h": 6
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "efcqeppjazvgga"
-          },
-          "query": "import \"math\"\n\nsite = \"TESP6\"\nalvo_t1 = float(v: ${alvo_tesp6})\n\nper_ind = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> pivot(rowKey: [\"site\",\"usage_type\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nt1_now_raw = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> findRecord(fn: (key) => true, idx: 0)\n\natual_t1 = if exists t1_now_raw._value and t1_now_raw._value > 0.0 then t1_now_raw._value else 1.0\ndelta_t1 = alvo_t1 - atual_t1\n\nper_ind\n  |> map(fn: (r) => ({r with sat: math.round(x: (r.current_usage + (r.current_usage / atual_t1) * delta_t1) / r.max_supported * 100.0 * 100.0) / 100.0}))\n  |> keep(columns: [\"site\",\"sat\"])\n  |> max(column: \"sat\")\n  |> rename(columns: {sat: \"_value\", site: \"_field\"})",
-          "refId": "A",
-          "hide": false
-        }
-      ],
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "textMode": "value_and_name",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "min": 0,
-          "max": 120,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 70
-              },
-              {
-                "color": "orange",
-                "value": 85
-              },
-              {
-                "color": "red",
-                "value": 100
-              }
-            ]
-          }
-        }
-      }
-    },
-    {
-      "id": 26,
-      "type": "stat",
-      "title": "T1 Atual / Alvo em TESP6",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "efcqeppjazvgga"
-      },
-      "gridPos": {
-        "x": 18,
-        "y": 67,
-        "w": 6,
-        "h": 6
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "efcqeppjazvgga"
-          },
-          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == \"TESP6\")\n  |> last()\n  |> keep(columns: [\"site\",\"_value\"])\n  |> rename(columns: {site: \"_field\"})",
-          "refId": "A",
-          "hide": false
-        }
-      ],
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "textMode": "value_and_name",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        }
-      }
-    },
-    {
-      "id": 27,
+      "id": 13,
       "type": "table",
-      "title": "📋 TESP6 — Indicadores NSX detalhados (formato planilha)",
+      "title": "TESP7 — Indicadores NSX (Limite, Atual, Por cliente, Projeção, Final, Saturação, Sobra, Clientes Possíveis)",
       "datasource": {
         "type": "influxdb",
         "uid": "efcqeppjazvgga"
       },
       "gridPos": {
         "x": 0,
-        "y": 73,
+        "y": 58,
         "w": 24,
         "h": 9
       },
@@ -1265,7 +1230,7 @@
             "type": "influxdb",
             "uid": "efcqeppjazvgga"
           },
-          "query": "import \"math\"\n\nsite = \"TESP6\"\nalvo_t1 = float(v: ${alvo_tesp6})\n\nper_ind = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> pivot(rowKey: [\"site\",\"usage_type\",\"display_name\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> keep(columns: [\"site\",\"usage_type\",\"display_name\",\"current_usage\",\"max_supported\"])\n\nt1_now_raw = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> findRecord(fn: (key) => true, idx: 0)\n\natual_t1 = if exists t1_now_raw._value and t1_now_raw._value > 0.0 then t1_now_raw._value else 1.0\ndelta_t1 = alvo_t1 - atual_t1\n\nper_ind\n  |> map(fn: (r) => ({r with\n         por_cliente:        math.round(x: r.current_usage / atual_t1 * 100.0) / 100.0,\n         projecao:           math.round(x: (r.current_usage / atual_t1) * delta_t1),\n         numero_final:       math.round(x: r.current_usage + (r.current_usage / atual_t1) * delta_t1),\n         saturacao_pct:      math.round(x: (r.current_usage + (r.current_usage / atual_t1) * delta_t1) / r.max_supported * 100.0 * 100.0) / 100.0,\n         sobra:              math.round(x: r.max_supported - (r.current_usage + (r.current_usage / atual_t1) * delta_t1)),\n         max_clientes:       (if r.current_usage > 0.0 then math.round(x: r.max_supported * atual_t1 / r.current_usage) else 0.0),\n         clientes_possiveis: (if r.current_usage > 0.0 then math.round(x: (r.max_supported * atual_t1 / r.current_usage) - atual_t1) else 0.0),\n       }))\n  |> keep(columns: [\"site\",\"display_name\",\"max_supported\",\"current_usage\",\"por_cliente\",\"projecao\",\"numero_final\",\"saturacao_pct\",\"sobra\",\"max_clientes\",\"clientes_possiveis\"])\n  |> rename(columns: {\n         display_name:       \"Indicador\",\n         max_supported:      \"Limite NSX\",\n         current_usage:      \"Atual\",\n         por_cliente:        \"Por cliente\",\n         projecao:           \"Projeção (até alvo)\",\n         numero_final:       \"Final ao atingir alvo\",\n         saturacao_pct:      \"Saturação ao alvo (%)\",\n         sobra:              \"Sobra ao alvo\",\n         max_clientes:       \"Max clientes (este limite)\",\n         clientes_possiveis: \"Clientes Possíveis (deste limite)\",\n       })\n  |> sort(columns: [\"Saturação ao alvo (%)\"], desc: true)",
+          "query": "import \"math\"\n\nsite = \"TESP7\"\nalvo_t1 = float(v: ${alvo_tesp7})\n\n// Pega current + max por usage_type. rowKey só usage_type ⇒ 1 linha por dimensão.\nper_ind = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r.site == site)\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> keep(columns: [\"usage_type\",\"_field\",\"_value\"])\n  |> pivot(rowKey: [\"usage_type\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\n// Pega Atual T1 do mesmo site como escalar (denominador do \"Por cliente\").\nt1_now = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.site == site)\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\natual_t1 = if exists t1_now._value and float(v: t1_now._value) > 0.0 then float(v: t1_now._value) else 1.0\ndelta_t1 = alvo_t1 - atual_t1\n\nper_ind\n  |> map(fn: (r) => ({r with\n         Indicador: (if r.usage_type == \"NUMBER_OF_LOGICAL_SWITCHES\" then \"Segments\" else if r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\" then \"T1\" else if r.usage_type == \"NUMBER_OF_NAT_RULES\" then \"System-wide NAT\" else if r.usage_type == \"NUMBER_OF_LOGICAL_PORTS\" then \"System-wide Logical Switch Ports\" else if r.usage_type == \"NUMBER_OF_GROUPS_BASED_ON_IP_SETS\" then \"Groups Based on IP Sets\" else r.usage_type),\n         por_cliente:        math.round(x: r.current_usage / atual_t1 * 100.0) / 100.0,\n         projecao:           math.round(x: (r.current_usage / atual_t1) * delta_t1),\n         numero_final:       math.round(x: r.current_usage + (r.current_usage / atual_t1) * delta_t1),\n         saturacao_pct:      math.round(x: (r.current_usage + (r.current_usage / atual_t1) * delta_t1) / r.max_supported * 1000.0) / 10.0,\n         sobra:              math.round(x: r.max_supported - (r.current_usage + (r.current_usage / atual_t1) * delta_t1)),\n         max_clientes:       (if r.current_usage > 0.0 then math.round(x: r.max_supported * atual_t1 / r.current_usage) else 0.0),\n         clientes_possiveis: (if r.current_usage > 0.0 then math.round(x: (r.max_supported * atual_t1 / r.current_usage) - atual_t1) else 0.0),\n       }))\n  |> keep(columns: [\"Indicador\",\"max_supported\",\"current_usage\",\"por_cliente\",\"projecao\",\"numero_final\",\"saturacao_pct\",\"sobra\",\"max_clientes\",\"clientes_possiveis\"])\n  |> rename(columns: {\n         max_supported:      \"Limite NSX\",\n         current_usage:      \"Nº Atual\",\n         por_cliente:        \"Por cliente\",\n         projecao:           \"Projeção\",\n         numero_final:       \"Número final\",\n         saturacao_pct:      \"Saturação ao alvo (%)\",\n         sobra:              \"Sobra\",\n         max_clientes:       \"Max clientes\",\n         clientes_possiveis: \"Clientes Possíveis\",\n       })\n  |> sort(columns: [\"Saturação ao alvo (%)\"], desc: true)\n  |> group()",
           "refId": "A",
           "hide": false
         }
@@ -1275,271 +1240,207 @@
         "footer": {
           "show": false
         }
-      }
-    },
-    {
-      "id": 28,
-      "type": "row",
-      "title": "━━━ TESP7 ━━━  (T1 Alvo = ${alvo_tesp7})",
-      "gridPos": {
-        "x": 0,
-        "y": 82,
-        "w": 24,
-        "h": 1
-      },
-      "collapsed": false,
-      "panels": []
-    },
-    {
-      "id": 29,
-      "type": "stat",
-      "title": "Clientes Possíveis em TESP7",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "efcqeppjazvgga"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 83,
-        "w": 6,
-        "h": 6
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "efcqeppjazvgga"
-          },
-          "query": "import \"math\"\n\nsite = \"TESP7\"\nalvo_t1 = float(v: ${alvo_tesp7})\n\nper_ind = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> pivot(rowKey: [\"site\",\"usage_type\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nt1_now_raw = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> findRecord(fn: (key) => true, idx: 0)\n\natual_t1 = if exists t1_now_raw._value and t1_now_raw._value > 0.0 then t1_now_raw._value else 1.0\n\nper_ind\n  |> map(fn: (r) => ({r with cp: (if r.current_usage > 0.0 then (r.max_supported * atual_t1 / r.current_usage) - atual_t1 else 0.0)}))\n  |> keep(columns: [\"site\",\"cp\"])\n  |> min(column: \"cp\")\n  |> rename(columns: {cp: \"_value\", site: \"_field\"})",
-          "refId": "A",
-          "hide": false
-        }
-      ],
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "textMode": "value_and_name",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        }
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Saturação ao alvo (%)"
+            },
+            "properties": [
               {
-                "color": "red",
-                "value": null
+                "id": "unit",
+                "value": "percent"
               },
               {
-                "color": "orange",
-                "value": 1
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 70
+                    },
+                    {
+                      "color": "orange",
+                      "value": 85
+                    },
+                    {
+                      "color": "red",
+                      "value": 100
+                    }
+                  ]
+                }
               },
               {
-                "color": "yellow",
-                "value": 50
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Clientes Possíveis"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
               },
               {
-                "color": "green",
-                "value": 150
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 1
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 50
+                    },
+                    {
+                      "color": "green",
+                      "value": 150
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Sobra"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 500
+                    },
+                    {
+                      "color": "green",
+                      "value": 2000
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Limite NSX"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Nº Atual"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Projeção"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Número final"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Max clientes"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
               }
             ]
           }
-        }
-      }
-    },
-    {
-      "id": 30,
-      "type": "stat",
-      "title": "Indicador que mais limita em TESP7",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "efcqeppjazvgga"
-      },
-      "gridPos": {
-        "x": 6,
-        "y": 83,
-        "w": 6,
-        "h": 6
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "efcqeppjazvgga"
-          },
-          "query": "import \"math\"\n\nsite = \"TESP7\"\n\nper_ind = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> pivot(rowKey: [\"site\",\"usage_type\",\"display_name\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nt1_now_raw = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> findRecord(fn: (key) => true, idx: 0)\n\natual_t1 = if exists t1_now_raw._value and t1_now_raw._value > 0.0 then t1_now_raw._value else 1.0\n\nper_ind\n  |> map(fn: (r) => ({r with cp: (if r.current_usage > 0.0 then (r.max_supported * atual_t1 / r.current_usage) - atual_t1 else 0.0)}))\n  |> keep(columns: [\"site\",\"display_name\",\"cp\"])\n  |> sort(columns: [\"cp\"], desc: false)\n  |> limit(n: 1)\n  |> rename(columns: {display_name: \"_value\", site: \"_field\"})\n  |> keep(columns: [\"_value\",\"_field\"])",
-          "refId": "A",
-          "hide": false
-        }
-      ],
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "textMode": "value_and_name",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "string"
-        }
-      }
-    },
-    {
-      "id": 31,
-      "type": "stat",
-      "title": "Maior saturação % AO atingir T1 Alvo em TESP7",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "efcqeppjazvgga"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 83,
-        "w": 6,
-        "h": 6
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "efcqeppjazvgga"
-          },
-          "query": "import \"math\"\n\nsite = \"TESP7\"\nalvo_t1 = float(v: ${alvo_tesp7})\n\nper_ind = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> pivot(rowKey: [\"site\",\"usage_type\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nt1_now_raw = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> findRecord(fn: (key) => true, idx: 0)\n\natual_t1 = if exists t1_now_raw._value and t1_now_raw._value > 0.0 then t1_now_raw._value else 1.0\ndelta_t1 = alvo_t1 - atual_t1\n\nper_ind\n  |> map(fn: (r) => ({r with sat: math.round(x: (r.current_usage + (r.current_usage / atual_t1) * delta_t1) / r.max_supported * 100.0 * 100.0) / 100.0}))\n  |> keep(columns: [\"site\",\"sat\"])\n  |> max(column: \"sat\")\n  |> rename(columns: {sat: \"_value\", site: \"_field\"})",
-          "refId": "A",
-          "hide": false
-        }
-      ],
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "textMode": "value_and_name",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "min": 0,
-          "max": 120,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 70
-              },
-              {
-                "color": "orange",
-                "value": 85
-              },
-              {
-                "color": "red",
-                "value": 100
-              }
-            ]
-          }
-        }
-      }
-    },
-    {
-      "id": 32,
-      "type": "stat",
-      "title": "T1 Atual / Alvo em TESP7",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "efcqeppjazvgga"
-      },
-      "gridPos": {
-        "x": 18,
-        "y": 83,
-        "w": 6,
-        "h": 6
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "efcqeppjazvgga"
-          },
-          "query": "from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == \"TESP7\")\n  |> last()\n  |> keep(columns: [\"site\",\"_value\"])\n  |> rename(columns: {site: \"_field\"})",
-          "refId": "A",
-          "hide": false
-        }
-      ],
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "textMode": "value_and_name",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        }
-      }
-    },
-    {
-      "id": 33,
-      "type": "table",
-      "title": "📋 TESP7 — Indicadores NSX detalhados (formato planilha)",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "efcqeppjazvgga"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 89,
-        "w": 24,
-        "h": 9
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "efcqeppjazvgga"
-          },
-          "query": "import \"math\"\n\nsite = \"TESP7\"\nalvo_t1 = float(v: ${alvo_tesp7})\n\nper_ind = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> pivot(rowKey: [\"site\",\"usage_type\",\"display_name\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> keep(columns: [\"site\",\"usage_type\",\"display_name\",\"current_usage\",\"max_supported\"])\n\nt1_now_raw = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site == site)\n  |> last()\n  |> map(fn: (r) => ({r with _value: float(v: r._value)}))\n  |> findRecord(fn: (key) => true, idx: 0)\n\natual_t1 = if exists t1_now_raw._value and t1_now_raw._value > 0.0 then t1_now_raw._value else 1.0\ndelta_t1 = alvo_t1 - atual_t1\n\nper_ind\n  |> map(fn: (r) => ({r with\n         por_cliente:        math.round(x: r.current_usage / atual_t1 * 100.0) / 100.0,\n         projecao:           math.round(x: (r.current_usage / atual_t1) * delta_t1),\n         numero_final:       math.round(x: r.current_usage + (r.current_usage / atual_t1) * delta_t1),\n         saturacao_pct:      math.round(x: (r.current_usage + (r.current_usage / atual_t1) * delta_t1) / r.max_supported * 100.0 * 100.0) / 100.0,\n         sobra:              math.round(x: r.max_supported - (r.current_usage + (r.current_usage / atual_t1) * delta_t1)),\n         max_clientes:       (if r.current_usage > 0.0 then math.round(x: r.max_supported * atual_t1 / r.current_usage) else 0.0),\n         clientes_possiveis: (if r.current_usage > 0.0 then math.round(x: (r.max_supported * atual_t1 / r.current_usage) - atual_t1) else 0.0),\n       }))\n  |> keep(columns: [\"site\",\"display_name\",\"max_supported\",\"current_usage\",\"por_cliente\",\"projecao\",\"numero_final\",\"saturacao_pct\",\"sobra\",\"max_clientes\",\"clientes_possiveis\"])\n  |> rename(columns: {\n         display_name:       \"Indicador\",\n         max_supported:      \"Limite NSX\",\n         current_usage:      \"Atual\",\n         por_cliente:        \"Por cliente\",\n         projecao:           \"Projeção (até alvo)\",\n         numero_final:       \"Final ao atingir alvo\",\n         saturacao_pct:      \"Saturação ao alvo (%)\",\n         sobra:              \"Sobra ao alvo\",\n         max_clientes:       \"Max clientes (este limite)\",\n         clientes_possiveis: \"Clientes Possíveis (deste limite)\",\n       })\n  |> sort(columns: [\"Saturação ao alvo (%)\"], desc: true)",
-          "refId": "A",
-          "hide": false
-        }
-      ],
-      "options": {
-        "showHeader": true,
-        "footer": {
-          "show": false
-        }
+        ]
       }
     }
   ]
