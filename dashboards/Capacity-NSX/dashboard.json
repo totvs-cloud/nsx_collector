@@ -43,26 +43,6 @@
           "text": "3000",
           "value": "3000"
         }
-      },
-      {
-        "name": "proj_start",
-        "type": "textbox",
-        "label": "Projeção — início janela passado",
-        "query": "-31d",
-        "current": {
-          "text": "-31d",
-          "value": "-31d"
-        }
-      },
-      {
-        "name": "proj_stop",
-        "type": "textbox",
-        "label": "Projeção — fim janela passado",
-        "query": "-30d",
-        "current": {
-          "text": "-30d",
-          "value": "-30d"
-        }
       }
     ]
   },
@@ -257,7 +237,7 @@
             "type": "influxdb",
             "uid": "efcqeppjazvgga"
           },
-          "query": "import \"math\"\n\n// 1) Snapshot atual: current_usage + max_supported por (site, usage_type),\n//    agregado cross-site (soma) por usage_type.\nnow_agg = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> last()\n  |> pivot(rowKey: [\"site\",\"usage_type\",\"display_name\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group(columns: [\"usage_type\",\"display_name\"])\n  |> reduce(\n       identity: {atual: 0.0, limite: 0.0},\n       fn: (r, accumulator) => ({\n         atual:  accumulator.atual  + r.current_usage,\n         limite: accumulator.limite + r.max_supported,\n       }))\n  |> group()\n\n// 2) Snapshot passado: média da janela [${proj_start}, ${proj_stop}].\npast_agg = from(bucket: \"nsx_capacity\")\n  |> range(start: ${proj_start}, stop: ${proj_stop})\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> mean()\n  |> group(columns: [\"usage_type\"])\n  |> sum()\n  |> rename(columns: {_value: \"atual_passado\"})\n  |> group()\n  |> keep(columns: [\"usage_type\",\"atual_passado\"])\n\n// 3) Conta VRFs distintas no(s) site(s) — denominador \"Por cliente\".\nvrf_count_raw = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_t1_per_vrf\" and r._field == \"t1_count\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> last()\n  |> group()\n  |> count()\n  |> findRecord(fn: (key) => true, idx: 0)\n\nsafe_vrf = if exists vrf_count_raw._value and vrf_count_raw._value > 0 then float(v: vrf_count_raw._value) else 1.0\n\n// 4) Join atual + passado, calcula projeção e número final.\njoin(tables: {a: now_agg, b: past_agg}, on: [\"usage_type\"])\n  |> map(fn: (r) => ({r with\n         por_cliente: math.round(x: r.atual / safe_vrf * 100.0) / 100.0,\n         projecao:    r.atual - r.atual_passado,\n         numero_final: r.atual + (r.atual - r.atual_passado),\n       }))\n  |> keep(columns: [\"display_name\",\"limite\",\"atual\",\"por_cliente\",\"projecao\",\"numero_final\"])\n  |> rename(columns: {display_name: \"Indicador\", limite: \"Limite\", atual: \"Nº Atual\", por_cliente: \"Por cliente\", projecao: \"Projeção\", numero_final: \"Número final\"})\n  |> sort(columns: [\"Indicador\"])",
+          "query": "import \"math\"\n\n// 1) Snapshot atual: current_usage + max_supported por (site, usage_type),\n//    agregado cross-site (soma) por usage_type.\nnow_agg = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\")\n  |> filter(fn: (r) => r._field == \"current_usage\" or r._field == \"max_supported\")\n  |> filter(fn: (r) => r.usage_type =~ /^(NUMBER_OF_LOGICAL_SWITCHES|NUMBER_OF_TIER1_ROUTERS|NUMBER_OF_NAT_RULES|NUMBER_OF_LOGICAL_PORTS|NUMBER_OF_GROUPS_BASED_ON_IP_SETS)$/)\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> last()\n  |> pivot(rowKey: [\"site\",\"usage_type\",\"display_name\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group(columns: [\"usage_type\",\"display_name\"])\n  |> reduce(\n       identity: {atual: 0.0, limite: 0.0},\n       fn: (r, accumulator) => ({\n         atual:  accumulator.atual  + r.current_usage,\n         limite: accumulator.limite + r.max_supported,\n       }))\n  |> group()\n\n// 2) Atual T1 (NUMBER_OF_TIER1_ROUTERS) — denominador comum de \"Por cliente\"\n//    conforme a planilha (1 cliente ≈ 1 T1). Cross-site = soma.\nt1_now = from(bucket: \"nsx_capacity\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"nsx_capacity\" and r._field == \"current_usage\")\n  |> filter(fn: (r) => r.usage_type == \"NUMBER_OF_TIER1_ROUTERS\")\n  |> filter(fn: (r) => r.site =~ /^${site:regex}$/)\n  |> last()\n  |> group()\n  |> sum()\n  |> findRecord(fn: (key) => true, idx: 0)\n\natual_t1 = if exists t1_now._value and t1_now._value > 0 then float(v: t1_now._value) else 1.0\nalvo_t1 = float(v: ${t1_target})\ndelta_t1 = alvo_t1 - atual_t1\n\n// 3) Calcula Por cliente, Projeção (até atingir T1 Alvo) e Número Final.\nnow_agg\n  |> map(fn: (r) => ({r with\n         por_cliente:  math.round(x: r.atual / atual_t1 * 100.0) / 100.0,\n         projecao:     math.round(x: (r.atual / atual_t1) * delta_t1),\n         numero_final: math.round(x: r.atual + (r.atual / atual_t1) * delta_t1),\n       }))\n  |> keep(columns: [\"display_name\",\"limite\",\"atual\",\"por_cliente\",\"projecao\",\"numero_final\"])\n  |> rename(columns: {display_name: \"Indicador\", limite: \"Limite\", atual: \"Nº Atual\", por_cliente: \"Por cliente\", projecao: \"Projeção\", numero_final: \"Número final\"})\n  |> sort(columns: [\"Indicador\"])",
           "refId": "A",
           "hide": false
         }
