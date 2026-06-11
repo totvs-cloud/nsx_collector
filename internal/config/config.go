@@ -55,6 +55,12 @@ type CapacityConfig struct {
 	CollectGWPolicies bool `yaml:"collect_gw_policies"`
 	// CollectGroups runs the groups inventory at slow cadence (D2).
 	CollectGroups bool `yaml:"collect_groups"`
+	// TrackT1Events runs the t1watch detector and writes nsx_t1_event points
+	// (created/deleted) to InfluxDB every slow cycle, INDEPENDENT of the Slack
+	// notifier. The external t1-slack-bot consumes those events, so this must
+	// stay on even with t1_watch.enabled=false. Slack posting from inside the
+	// collector remains gated by t1_watch.enabled. Defaults to true (nil = on).
+	TrackT1Events *bool `yaml:"track_t1_events"`
 }
 
 // SlackConfig holds Slack alerting settings.
@@ -170,6 +176,10 @@ func (c *Config) setDefaults() {
 	}
 	if c.T1Watch.T0T1LimitDefault == 0 {
 		c.T1Watch.T0T1LimitDefault = 1000
+	}
+	if c.Capacity.TrackT1Events == nil {
+		on := true
+		c.Capacity.TrackT1Events = &on
 	}
 	if c.Capacity.NATPerT1PaceMS == 0 {
 		c.Capacity.NATPerT1PaceMS = 30 // 30ms × 2272 T1s = ~68s per slow cycle on TESP3

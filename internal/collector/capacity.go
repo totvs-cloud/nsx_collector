@@ -207,7 +207,11 @@ func (cc *CapacityCollector) Collect(ctx context.Context, now time.Time) (capaci
 	}
 
 	// ---- t1watch — diff + notify ----------------------------------------
-	if cc.t1cfg.Enabled || cc.notifier != nil {
+	// Run the detector + write nsx_t1_event whenever event tracking is on
+	// (default), even if the in-collector Slack notifier is disabled — the
+	// external t1-slack-bot consumes those events from InfluxDB.
+	trackT1Events := cc.cfg.TrackT1Events == nil || *cc.cfg.TrackT1Events
+	if trackT1Events || cc.t1cfg.Enabled || cc.notifier != nil {
 		// Snapshot is loaded/saved regardless of Enabled so the baseline is
 		// in place when the operator flips Enabled to true.
 		snap, baselined, err := t1watch.LoadSnapshot(cc.stateDir, site)

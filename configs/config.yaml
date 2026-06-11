@@ -43,6 +43,7 @@ t1_watch:
 # Cobertura estendida do painel Capacity NSX.
 # Liga/desliga coletas que custam chamadas por T1 (segments, NAT, FW).
 capacity:
+  track_t1_events: true                   # grava nsx_t1_event (created/deleted) p/ o t1-slack-bot; independe de t1_watch.enabled
   collect_segments: true                  # inventário para "segments por VRF/T0" (~1-2 req)
   collect_gw_policies: true               # gateway-policies?include_rule_count=true (~1-3 req)
   collect_groups: true                    # inventário de groups + flag de vazios (~1-2 req)
