@@ -32,21 +32,40 @@ type Event struct {
 // baseline only, never emit events. The caller is responsible for SaveSnapshot
 // afterwards.
 //
-// VRFCountsAfter and totalT1 are computed from the live inventory by the
-// caller (we receive them here to fill the event payload). vrfLimitFn is a
-// per-VRF limit resolver (default + overrides).
+// vrfCountsAfter/t0CountsAfter and totalT1 are computed from the live inventory
+// by the caller (we receive them here to fill the event payload). A T1 parented
+// to a VRF is counted/limited against the VRF maps; one parented to a regular
+// T0 against the T0 maps — keyed by the parent display name. vrfLimitFn and
+// t0LimitFn are the matching per-parent limit resolvers (default + overrides).
 func Detect(
 	snapshot *Snapshot,
 	live []LiveT1,
 	baselined bool,
 	vrfCountsAfter map[string]int64,
+	t0CountsAfter map[string]int64,
 	totalT1 int64,
 	vrfLimitFn func(vrfName string) int64,
+	t0LimitFn func(t0Name string) int64,
 	now time.Time,
 ) []Event {
 	liveByID := make(map[string]LiveT1, len(live))
 	for _, t := range live {
 		liveByID[t.ID] = t
+	}
+
+	// countFor / limitFor pick the VRF or T0 lookup based on the parent kind so
+	// T1s under a regular T0 don't report 0 against the (empty) VRF map.
+	countFor := func(kind, name string) int64 {
+		if kind == "vrf" {
+			return vrfCountsAfter[name]
+		}
+		return t0CountsAfter[name]
+	}
+	limitFor := func(kind, name string) int64 {
+		if kind == "vrf" {
+			return vrfLimitFn(name)
+		}
+		return t0LimitFn(name)
 	}
 
 	var events []Event
@@ -71,18 +90,12 @@ func Detect(
 			// First run after fresh install: never emit, just baseline.
 			continue
 		}
-		var vrfCount int64
-		if t.ParentKind == "vrf" {
-			vrfCount = vrfCountsAfter[t.ParentT0Name]
-		} else {
-			vrfCount = vrfCountsAfter[t.ParentT0Name]
-		}
 		events = append(events, Event{
 			Kind:            "created",
 			T1:              t,
 			OccurredAt:      now,
-			VRFT1CountAfter: vrfCount,
-			VRFT1Limit:      vrfLimitFn(t.ParentT0Name),
+			VRFT1CountAfter: countFor(t.ParentKind, t.ParentT0Name),
+			VRFT1Limit:      limitFor(t.ParentKind, t.ParentT0Name),
 			SiteT1Total:     totalT1,
 		})
 	}
@@ -108,8 +121,8 @@ func Detect(
 				EdgeClusterName: info.EdgeClusterName,
 			},
 			OccurredAt:      now,
-			VRFT1CountAfter: vrfCountsAfter[info.ParentT0Name],
-			VRFT1Limit:      vrfLimitFn(info.ParentT0Name),
+			VRFT1CountAfter: countFor(info.ParentKind, info.ParentT0Name),
+			VRFT1Limit:      limitFor(info.ParentKind, info.ParentT0Name),
 			SiteT1Total:     totalT1,
 		})
 	}

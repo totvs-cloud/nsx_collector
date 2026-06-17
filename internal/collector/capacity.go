@@ -221,7 +221,7 @@ func (cc *CapacityCollector) Collect(ctx context.Context, now time.Time) (capaci
 		if snap == nil {
 			snap = &t1watch.Snapshot{Site: site, Known: map[string]t1watch.T1Info{}}
 		}
-		events := t1watch.Detect(snap, live, baselined, vrfCount, siteT1Total, vrfLimit, now)
+		events := t1watch.Detect(snap, live, baselined, vrfCount, t0Count, siteT1Total, vrfLimit, t0Limit, now)
 		telemetry.T1KnownGauge.WithLabelValues(site).Set(float64(len(snap.Known)))
 		if err := t1watch.SaveSnapshot(cc.stateDir, snap); err != nil {
 			cc.logger.Warn("t1watch save snapshot failed", zap.Error(err))
