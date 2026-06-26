@@ -159,13 +159,17 @@ func LogicalRouterPoint(site, parentT0Name string, lr *nsx.LogicalRouter, now ti
 	)
 }
 
-// severityNum maps NSX alarm severity to a sortable integer (higher = more severe).
+// severityNum maps an alarm severity to a sortable integer (higher = more severe).
+// WARNING is an operational-only level introduced by the reclassification
+// (see nsx.Alarm.OperationalSeverity); it sits just below HIGH.
 func severityNum(s string) int64 {
 	switch s {
 	case "CRITICAL":
 		return 4
 	case "HIGH":
 		return 3
+	case "WARNING":
+		return 2
 	case "MEDIUM":
 		return 2
 	case "LOW":
@@ -176,8 +180,14 @@ func severityNum(s string) int64 {
 
 // AlarmPoint converts an NSX active alarm to an InfluxDB point.
 // measurement: nsx_alarm
-// tags: site, alarm_id, severity, feature_name, node_name, event_type, summary
+// tags: site, alarm_id, severity, severity_vendor, feature_name, node_name, event_type, summary
 // fields: severity_num (int only — avoids pivot on string fields in Flux)
+//
+// The "severity" tag carries the operational severity from the approved
+// reclassification (see nsx.Alarm.OperationalSeverity) so Grafana panels show the
+// urgency the NOC actually wants; the raw vendor severity is preserved in
+// "severity_vendor" for traceability. severity_num is derived from the operational
+// severity so colour thresholds and sorting follow the reclassified level.
 //
 // event_type and summary are stored as tags so queries need no pivot:
 //   filter _field == "severity_num" → last() → sort → keep tags for display.
@@ -187,19 +197,21 @@ func AlarmPoint(site string, alarm *nsx.Alarm, now time.Time) *write.Point {
 	if nodeName == "" {
 		nodeName = "-"
 	}
+	severity := alarm.OperationalSeverity()
 	return influxdb2.NewPoint(
 		"nsx_alarm",
 		map[string]string{
-			"site":         site,
-			"alarm_id":     alarm.ID,
-			"severity":     alarm.Severity,
-			"feature_name": alarm.FeatureName,
-			"node_name":    nodeName,
-			"event_type":   alarm.EventTypeDisplayName,
-			"summary":      alarm.Summary,
+			"site":            site,
+			"alarm_id":        alarm.ID,
+			"severity":        severity,
+			"severity_vendor": alarm.Severity,
+			"feature_name":    alarm.FeatureName,
+			"node_name":       nodeName,
+			"event_type":      alarm.EventTypeDisplayName,
+			"summary":         alarm.Summary,
 		},
 		map[string]interface{}{
-			"severity_num": severityNum(alarm.Severity),
+			"severity_num": severityNum(severity),
 		},
 		now,
 	)
