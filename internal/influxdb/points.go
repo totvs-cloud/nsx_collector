@@ -936,3 +936,30 @@ func SiteT1TotalsPoint(site string, total, onVRF, onT0 int64, now time.Time) *wr
 		now,
 	)
 }
+
+// APIClientCallPoint records how many audited API calls one client (src_ip ×
+// username) made for one operation against one manager node inside the last
+// auditwatch window. rate_per_min is precomputed so dashboards don't need to
+// know the window size. Fonte: nsx-audit.log (módulo auditwatch).
+func APIClientCallPoint(site, managerNode, srcIP, username, operation, status string, count int64, windowS float64, now time.Time) *write.Point {
+	ratePerMin := 0.0
+	if windowS > 0 {
+		ratePerMin = float64(count) / windowS * 60.0
+	}
+	return influxdb2.NewPoint(
+		"nsx_api_client_calls",
+		map[string]string{
+			"site":         site,
+			"manager_node": managerNode,
+			"src_ip":       srcIP,
+			"username":     username,
+			"operation":    operation,
+			"status":       status,
+		},
+		map[string]interface{}{
+			"count":        count,
+			"rate_per_min": ratePerMin,
+		},
+		now,
+	)
+}

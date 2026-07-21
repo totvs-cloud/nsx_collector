@@ -40,6 +40,16 @@ t1_watch:
   vrf_t1_limits: {}                       # override por VRF: { "VRF-PROD-X": 300 }
   t0_t1_limits: {}                        # override por T0: { "T0-Cluster_1": 1500 }
 
+# Contabilidade de uso da API do Manager (dashboard "NSX — API Usage").
+# Lê o tail do nsx-audit.log de cada nó do cluster a cada intervalo e grava
+# nsx_api_client_calls (chamadas por src_ip/username/operation/status).
+# Custo: 1 GET /cluster/status + 1 leitura de log por nó — sem fan-out.
+# Atenção: o audit log só registra chamadas auditadas; os números são um
+# piso do volume real, mas ranqueiam bem os ofensores.
+audit_watch:
+  enabled: true
+  interval: 60s
+
 # Cobertura estendida do painel Capacity NSX.
 # Liga/desliga coletas que custam chamadas por T1 (segments, NAT, FW).
 capacity:

@@ -18,6 +18,7 @@ type Config struct {
 	Slack           SlackConfig                 `yaml:"slack"`
 	T1Watch         T1WatchConfig               `yaml:"t1_watch"`
 	Capacity        CapacityConfig              `yaml:"capacity"`
+	AuditWatch      AuditWatchConfig            `yaml:"audit_watch"`
 	// InterfaceSpeeds overrides link_speed_mbps for interfaces where the NSX API
 	// returns 0 (common for DPDK/fastpath fp-* interfaces on bare-metal Edge nodes).
 	// Format: node_name -> interface_id -> speed in Mbps.
@@ -37,6 +38,15 @@ type T1WatchConfig struct {
 	T0T1LimitDefault   int64             `yaml:"t0_t1_limit_default"`
 	VRFT1Limits        map[string]int64  `yaml:"vrf_t1_limits"`
 	T0T1Limits         map[string]int64  `yaml:"t0_t1_limits"`
+}
+
+// AuditWatchConfig controls the NSX API usage accounting (dashboard
+// "NSX — API Usage"). The watcher tails nsx-audit.log on every online manager
+// node each interval and writes nsx_api_client_calls counters per
+// src_ip/username/operation/status.
+type AuditWatchConfig struct {
+	Enabled  bool          `yaml:"enabled"`
+	Interval time.Duration `yaml:"interval"`
 }
 
 // CapacityConfig controls extended Capacity NSX collection (segments, NAT
@@ -186,5 +196,8 @@ func (c *Config) setDefaults() {
 	}
 	if c.Capacity.NATPerT1Parallel == 0 {
 		c.Capacity.NATPerT1Parallel = 4
+	}
+	if c.AuditWatch.Interval == 0 {
+		c.AuditWatch.Interval = 60 * time.Second
 	}
 }

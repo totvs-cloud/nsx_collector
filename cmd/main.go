@@ -18,6 +18,7 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	"nsx-collector/internal/alerting"
+	"nsx-collector/internal/auditwatch"
 	"nsx-collector/internal/collector"
 	"nsx-collector/internal/config"
 	influxpkg "nsx-collector/internal/influxdb"
@@ -110,6 +111,7 @@ func main() {
 	// that drives the Capacity NSX panel and the new-T1 Slack bot.
 	rateCalc := collector.NewRateCalculator()
 	var workers []*collector.Worker
+	var auditWatchers []*auditwatch.Watcher
 	for _, mgr := range managers {
 		w := collector.NewWorker(mgr, writer, cfg.Intervals, cfg.InterfaceSpeeds, rateCalc, alertEval, nil)
 
@@ -148,6 +150,12 @@ func main() {
 			logger.Named(mgr.Site),
 		)
 		w.SetCapacityCollector(capCollector)
+
+		// Contabilidade de uso da API (nsx-audit.log -> nsx_api_client_calls).
+		if cfg.AuditWatch.Enabled {
+			auditWatchers = append(auditWatchers,
+				auditwatch.New(mgr.Site, w.Client(), writer, cfg.AuditWatch.Interval))
+		}
 
 		workers = append(workers, w)
 		logger.Info("manager registered",
@@ -192,6 +200,11 @@ func main() {
 		zap.Duration("slow_interval", cfg.Intervals.Slow),
 	)
 	logger.Info("nsx-collector starting", startFields...)
+
+	// Start API usage watchers (one per manager, own cadence)
+	for _, aw := range auditWatchers {
+		go aw.Run(ctx)
+	}
 
 	// Start scheduler (blocks until context cancelled)
 	sched := collector.NewScheduler(workers, cfg.Intervals.Default)
