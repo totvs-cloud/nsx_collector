@@ -132,12 +132,17 @@ func (w *Worker) Collect(ctx context.Context) {
 		}
 	}
 
-	// 2. Transport nodes — list all, then fetch status for each
+	// 2. Transport nodes — list all, then fetch status for Edge nodes only.
+	// O status por nó (/transport-nodes/<id>/status) faz fan-out do Manager até
+	// o próprio nó e é a chamada mais cara do collector. Hosts ESXi não alimentam
+	// nenhum painel (nsx_transport_node só é usado no filtro de EdgeNode e
+	// nsx_edge_resource é exclusivo de edge), então hosts são pulados.
 	nodes, err := w.client.GetTransportNodes(ctx)
 	if err != nil {
 		logger.Warn("transport nodes list failed", zap.Error(err))
 		telemetry.CollectErrors.WithLabelValues(site, "transport_nodes").Inc()
 	} else {
+		edgeCount := 0
 		for _, node := range nodes {
 			nodeID := node.ID
 			nodeName := node.DisplayName
@@ -145,6 +150,10 @@ func (w *Worker) Collect(ctx context.Context) {
 			if nodeType == "" {
 				nodeType = "HostNode"
 			}
+			if !isEdgeNodeType(nodeType) {
+				continue
+			}
+			edgeCount++
 
 			ts, err := w.client.GetTransportNodeStatus(ctx, nodeID)
 			if err != nil {
@@ -159,69 +168,67 @@ func (w *Worker) Collect(ctx context.Context) {
 			pts := influxpkg.TransportNodeStatusPoints(site, nodeID, nodeName, nodeType, ts, now)
 			points = append(points, pts...)
 
-			// Collect physical uplink stats for Edge nodes
-			if isEdgeNodeType(nodeType) {
-				ifaces, err := w.client.GetTransportNodeInterfaces(ctx, nodeID)
-				if err != nil {
-					logger.Warn("interface list failed",
-						zap.String("node", nodeName),
-						zap.Error(err),
-					)
-					telemetry.CollectErrors.WithLabelValues(site, "edge_interfaces").Inc()
-				} else {
-					uplinkCandidates := 0
-					for _, iface := range ifaces {
-						if !isEdgeUplinkInterface(&iface) {
-							continue
-						}
-						uplinkCandidates++
-						ifStats, err := w.client.GetTransportNodeInterfaceStats(ctx, nodeID, iface.InterfaceID)
-						if err != nil {
-							logger.Warn("interface stats failed",
-								zap.String("node", nodeName),
-								zap.String("interface", iface.InterfaceID),
-								zap.String("interface_type", iface.InterfaceType),
-								zap.Error(err),
-							)
-							telemetry.CollectErrors.WithLabelValues(site, "edge_interface_stats").Inc()
-							continue
-						}
-						// Apply configured speed override when the NSX API returns 0
-						// (common for DPDK/fastpath fp-* interfaces on bare-metal Edge nodes).
-						ifaceResolved := iface
-						if ifaceResolved.LinkSpeed == 0 {
-							if nodeOverrides, ok := w.speedOverrides[nodeName]; ok {
-								if s, ok := nodeOverrides[iface.InterfaceID]; ok && s > 0 {
-									ifaceResolved.LinkSpeed = s
-								}
-							}
-						}
-						points = append(points, influxpkg.EdgeUplinkStatsPoint(site, nodeID, nodeName, &ifaceResolved, ifStats, now))
-
-						if rate := w.rateCalc.Calculate(nodeName, iface.InterfaceID, uint64(ifStats.RxBytes), uint64(ifStats.TxBytes), ifaceResolved.LinkSpeed, now); rate != nil {
-							points = append(points, influxpkg.EdgeUplinkRatePoint(
-								site, nodeID, nodeName, iface.InterfaceID,
-								rate.RxBps, rate.TxBps,
-								rate.RxUtilizationPct, rate.TxUtilizationPct,
-								rate.LinkSpeedMbps, now,
-							))
-							if w.alertEval != nil {
-								w.alertEval.Evaluate(site, nodeName, iface.InterfaceID,
-									rate.RxUtilizationPct, rate.TxUtilizationPct,
-									rate.LinkSpeedMbps, rate.RxBps, rate.TxBps,
-									ifStats.RxErrors, ifStats.TxErrors)
+			// Collect physical uplink stats
+			ifaces, err := w.client.GetTransportNodeInterfaces(ctx, nodeID)
+			if err != nil {
+				logger.Warn("interface list failed",
+					zap.String("node", nodeName),
+					zap.Error(err),
+				)
+				telemetry.CollectErrors.WithLabelValues(site, "edge_interfaces").Inc()
+			} else {
+				uplinkCandidates := 0
+				for _, iface := range ifaces {
+					if !isEdgeUplinkInterface(&iface) {
+						continue
+					}
+					uplinkCandidates++
+					ifStats, err := w.client.GetTransportNodeInterfaceStats(ctx, nodeID, iface.InterfaceID)
+					if err != nil {
+						logger.Warn("interface stats failed",
+							zap.String("node", nodeName),
+							zap.String("interface", iface.InterfaceID),
+							zap.String("interface_type", iface.InterfaceType),
+							zap.Error(err),
+						)
+						telemetry.CollectErrors.WithLabelValues(site, "edge_interface_stats").Inc()
+						continue
+					}
+					// Apply configured speed override when the NSX API returns 0
+					// (common for DPDK/fastpath fp-* interfaces on bare-metal Edge nodes).
+					ifaceResolved := iface
+					if ifaceResolved.LinkSpeed == 0 {
+						if nodeOverrides, ok := w.speedOverrides[nodeName]; ok {
+							if s, ok := nodeOverrides[iface.InterfaceID]; ok && s > 0 {
+								ifaceResolved.LinkSpeed = s
 							}
 						}
 					}
-					logger.Debug("edge interfaces evaluated",
-						zap.String("node", nodeName),
-						zap.Int("interfaces_total", len(ifaces)),
-						zap.Int("uplink_candidates", uplinkCandidates),
-					)
+					points = append(points, influxpkg.EdgeUplinkStatsPoint(site, nodeID, nodeName, &ifaceResolved, ifStats, now))
+
+					if rate := w.rateCalc.Calculate(nodeName, iface.InterfaceID, uint64(ifStats.RxBytes), uint64(ifStats.TxBytes), ifaceResolved.LinkSpeed, now); rate != nil {
+						points = append(points, influxpkg.EdgeUplinkRatePoint(
+							site, nodeID, nodeName, iface.InterfaceID,
+							rate.RxBps, rate.TxBps,
+							rate.RxUtilizationPct, rate.TxUtilizationPct,
+							rate.LinkSpeedMbps, now,
+						))
+						if w.alertEval != nil {
+							w.alertEval.Evaluate(site, nodeName, iface.InterfaceID,
+								rate.RxUtilizationPct, rate.TxUtilizationPct,
+								rate.LinkSpeedMbps, rate.RxBps, rate.TxBps,
+								ifStats.RxErrors, ifStats.TxErrors)
+						}
+					}
 				}
+				logger.Debug("edge interfaces evaluated",
+					zap.String("node", nodeName),
+					zap.Int("interfaces_total", len(ifaces)),
+					zap.Int("uplink_candidates", uplinkCandidates),
+				)
 			}
 		}
-		logger.Debug("transport nodes collected", zap.Int("count", len(nodes)))
+		logger.Debug("transport nodes collected", zap.Int("total", len(nodes)), zap.Int("edges", edgeCount))
 	}
 
 	// 3. Logical routers (T0, T1, VRF) — inventory
